@@ -1,0 +1,3 @@
+# the bundled and generated files are large single lines; keep diffs readable
+vendor/*.js -diff linguist-vendored
+dist/*.html -diff linguist-generated

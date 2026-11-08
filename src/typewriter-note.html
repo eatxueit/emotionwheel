@@ -1,0 +1,449 @@
+<title>Typewriter Note</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;1,400&family=Figtree:wght@400;600;700&display=swap">
+<style>
+  /* Layout: one column; a sheet of typing paper with a carriage ruler above it. The paper stays paper in both themes. */
+  :root {
+    --bg: #eceae6;
+    --fg: #24221f;
+    --muted: #6b665f;
+    --line: #d6d2cb;
+    --paper: #fdfcf9;
+    --paper-edge: #e3e0da;
+    --ink: #1c1d24;
+    --ruler-ink: #8c8780;
+    --bell: #c4462f;
+    --font-type: "Courier Prime", "Courier New", Courier, monospace;
+    --font-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1c1b1a; --fg: #ebe7e1; --muted: #a29c94; --line: #34312d; --paper-edge: #2a2826;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1b1a; --fg: #ebe7e1; --muted: #a29c94; --line: #34312d; --paper-edge: #2a2826;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-ui);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 48px;
+  }
+  main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  h1 { font-size: 1.5rem; margin: 0; text-wrap: balance; }
+  p { margin: 0; color: var(--muted); line-height: 1.5; max-width: 62ch; }
+  kbd {
+    font: 600 0.8em var(--font-ui); border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 4px; padding: 1px 5px; background: var(--bg); color: var(--fg);
+  }
+
+  /* ---------------- the component ---------------- */
+  .tw { position: relative; }
+  .tw-ruler, .tw-sheet { font-family: var(--font-type); font-size: var(--tw-fs, 16px); }
+
+  .tw-ruler {
+    position: relative; height: 2.4em; margin: 0 var(--tw-pad-x) 0;
+    color: var(--ruler-ink); user-select: none;
+  }
+  .tw-ruler .tick { position: absolute; bottom: 0; width: 1px; background: currentColor; opacity: 0.55; }
+  .tw-ruler .tick.five { height: 0.45em; }
+  .tw-ruler .tick.one { height: 0.22em; opacity: 0.35; }
+  .tw-ruler .num { position: absolute; bottom: 1.05em; font-size: 0.62em; transform: translateX(-50%); font-family: var(--font-ui); }
+  .tw-ruler .stop { position: absolute; bottom: 0.5em; width: 0; height: 0;
+    border-left: 0.22em solid transparent; border-right: 0.22em solid transparent; border-top: 0.32em solid currentColor;
+    transform: translateX(-50%); opacity: 0.7; }
+  .tw-ruler .carriage {
+    position: absolute; bottom: -0.1em; width: 0; height: 0; transform: translateX(-50%);
+    border-left: 0.38em solid transparent; border-right: 0.38em solid transparent; border-bottom: 0.55em solid var(--fg);
+    transition: left 60ms linear;
+  }
+  .tw-ruler .carriage.bell { border-bottom-color: var(--bell); }
+  .tw-ruler .margin-r { position: absolute; bottom: 0; top: 0.2em; width: 2px; background: var(--bell); opacity: 0.6; }
+
+  .tw-sheet {
+    position: relative; cursor: text; color: var(--ink); font-style: italic;
+    background-color: var(--paper);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.42  0 0 0 0 0.36  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    border: 1px solid var(--paper-edge);
+    box-shadow: 0 1px 0 var(--paper-edge), 0 10px 24px -14px rgba(0,0,0,.35);
+    padding: var(--tw-pad-y) var(--tw-pad-x);
+    line-height: 1.6;
+  }
+  .tw-sheet:focus-within { box-shadow: 0 1px 0 var(--paper-edge), 0 12px 28px -12px rgba(0,0,0,.45), 0 0 0 2px var(--fg); }
+  .tw-lines { position: relative; min-height: calc(var(--tw-min-lines, 6) * 1.6em); white-space: pre; }
+  .tw-line { height: 1.6em; display: block; }
+  .tw-line span { display: inline-block; width: var(--tw-cw, 1ch); text-align: center; }
+  .tw-caret {
+    position: absolute; width: var(--tw-cw, 1ch); height: 0.14em; background: var(--ink);
+    animation: tw-blink 1.05s steps(1) infinite;
+  }
+  .tw-sheet:not(:focus-within) .tw-caret { opacity: 0; animation: none; }
+  @keyframes tw-blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .tw-caret { animation: none; } .tw-ruler .carriage { transition: none; } }
+
+  .tw-input {
+    position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0;
+    resize: none; overflow: hidden; font-size: 16px; /* 16px stops iOS zooming in */
+  }
+
+  .tw-status {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px;
+    margin-top: 10px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .tw-status .msg.warn { color: var(--bell); }
+
+  .sheet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sheet-actions .ask { color: var(--fg); font-size: 0.9rem; font-weight: 600; }
+  .btn {
+    font: 600 0.85rem var(--font-ui); border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--fg); padding: 7px 12px; cursor: pointer;
+  }
+  .btn.danger { border-color: var(--bell); color: var(--bell); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 18px; font-size: 0.9rem; }
+  .keys div { display: flex; gap: 8px; align-items: baseline; color: var(--muted); }
+  .keys b { color: var(--fg); font-weight: 600; }
+</style>
+
+<main>
+  <h1>Typewriter Note</h1>
+  <p>A note field that behaves like a sheet in a typewriter. The carriage moves to the next line on its own at the right margin, Return starts a new line, and you set your own margins and indents with the space bar and tab.</p>
+
+  <div id="note"></div>
+
+  <div class="sheet-actions">
+    <button type="button" class="btn" id="clear">Clear note</button>
+    <span id="confirm" hidden>
+      <span class="ask">Clear this note? It can't be brought back.</span>
+      <button type="button" class="btn danger" id="clear-yes">Clear</button>
+      <button type="button" class="btn" id="clear-no">Keep it</button>
+    </span>
+  </div>
+
+  <div class="keys">
+    <div><kbd>Space</kbd> <span><b>One column</b> forward</span></div>
+    <div><kbd>Tab</kbd> <span><b>Next tab stop</b>, every 5 columns</span></div>
+    <div><kbd>Backspace</kbd> <span><b>Does nothing</b>, no erasing</span></div>
+    <div><kbd>Return</kbd> <span><b>New line</b>, twice for a blank line</span></div>
+  </div>
+</main>
+
+<script>
+/*
+  TypewriterBox: a self-contained typewriter text field.
+
+  new TypewriterBox(container, {
+    cols: 52,          // characters per line (the right margin)
+    tabSize: 5,        // tab stops every N columns
+    minLines: 6,       // how much paper shows when empty
+    maxLength: 2000,
+    value: '',         // starting text (tabs and line breaks allowed)
+    label: 'Note',     // accessible name
+    onChange: function (text) {}
+  });
+
+  .value  get/set the raw text (may contain \t)
+  .clear()   empty the sheet (typing itself can't erase)
+  .focus()
+  .destroy()
+*/
+(function (global) {
+  'use strict';
+
+  function hash(n) {               // small stable pseudo-random per character position
+    n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n = n ^ (n >>> 4);
+    n = Math.imul(n, 0x27d4eb2d); n = n ^ (n >>> 15);
+    return (n >>> 0) / 4294967295;
+  }
+
+  function TypewriterBox(container, opts) {
+    opts = opts || {};
+    this.cols = opts.cols || 52;
+    this.tabSize = opts.tabSize || 5;
+    this.minLines = opts.minLines || 6;
+    this.maxLength = opts.maxLength || 2000;
+    this.onChange = opts.onChange || function () {};
+    this.text = clean(opts.value || '');
+    this.container = container;
+    this._build(opts.label || 'Note');
+    this._fit();
+    this._render();
+  }
+
+  // Windows and old Mac line endings become plain line breaks
+  function clean(s) { return String(s).replace(/\r\n?/g, '\n'); }
+
+  TypewriterBox.prototype._build = function (label) {
+    var self = this;
+    var root = document.createElement('div');
+    root.className = 'tw';
+    root.innerHTML =
+      '<div class="tw-ruler" aria-hidden="true"></div>' +
+      '<div class="tw-sheet">' +
+        '<textarea class="tw-input" spellcheck="false" autocapitalize="sentences" autocomplete="off"></textarea>' +
+        '<div class="tw-lines" aria-hidden="true"></div>' +
+        '<div class="tw-caret" aria-hidden="true"></div>' +
+      '</div>' +
+      '<div class="tw-status"><span class="pos"></span><span class="msg" aria-live="polite"></span></div>';
+    this.container.appendChild(root);
+    this.root = root;
+    this.ruler = root.querySelector('.tw-ruler');
+    this.sheet = root.querySelector('.tw-sheet');
+    this.input = root.querySelector('.tw-input');
+    this.linesEl = root.querySelector('.tw-lines');
+    this.caret = root.querySelector('.tw-caret');
+    this.posEl = root.querySelector('.pos');
+    this.msgEl = root.querySelector('.msg');
+
+    this.input.setAttribute('aria-label', label);
+    this.input.maxLength = this.maxLength;
+    this.input.value = this.text;
+    root.style.setProperty('--tw-min-lines', this.minLines);
+
+    this._buildRuler();
+
+    // keep the hidden field's cursor at the end: a typewriter only types forward
+    function toEnd() {
+      var n = self.input.value.length;
+      if (self.input.selectionStart !== n || self.input.selectionEnd !== n) {
+        try { self.input.setSelectionRange(n, n); } catch (e) {}
+      }
+    }
+
+    this._onKey = function (e) {
+      if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        self._insert('\t');
+        return;
+      }
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        self._say('No erasing on this machine. Whatever is typed stays typed.');
+        return;
+      }
+      if (/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End|PageUp|PageDown)$/.test(e.key)) {
+        e.preventDefault();
+        return;
+      }
+      toEnd();
+    };
+    this._onInput = function () {
+      var v = clean(self.input.value);
+      if (v.length < self.text.length && self.text.indexOf(v) === 0) {   // something erased text anyway
+        self.input.value = self.text; toEnd(); return;
+      }
+      if (v.length > self.maxLength) v = v.slice(0, self.maxLength);
+      if (v !== self.input.value) self.input.value = v;
+      self._set(v);
+      toEnd();
+    };
+    this._onSheet = function (e) { if (e.target !== self.input) { e.preventDefault(); self.focus(); } };
+
+    this.input.addEventListener('keydown', this._onKey);
+    // phone keyboards often skip keydown for deleting, so stop it here too; cutting text is erasing as well
+    this.input.addEventListener('beforeinput', function (e) {
+      if (/^delete/.test(e.inputType || '')) {
+        e.preventDefault();
+        self._say('No erasing on this machine. Whatever is typed stays typed.');
+      }
+    });
+    this.input.addEventListener('cut', function (e) { e.preventDefault(); });
+    this.input.addEventListener('input', this._onInput);
+    this.input.addEventListener('select', toEnd);
+    this.input.addEventListener('focus', function () { setTimeout(toEnd, 0); });
+    this.sheet.addEventListener('mousedown', this._onSheet);
+
+    this._ro = new ResizeObserver(function () { self._fit(); });
+    this._ro.observe(root);
+  };
+
+  TypewriterBox.prototype._buildRuler = function () {
+    var html = '';
+    for (var c = 0; c <= this.cols; c++) {
+      var left = 'calc(' + c + ' * var(--tw-cw))';
+      if (c % 10 === 0) html += '<span class="num" style="left:' + left + '">' + c + '</span>';
+      html += '<span class="tick ' + (c % 5 === 0 ? 'five' : 'one') + '" style="left:' + left + '"></span>';
+    }
+    for (var t = this.tabSize; t < this.cols; t += this.tabSize) {
+      html += '<span class="stop" style="left:calc(' + (t + 0.5) + ' * var(--tw-cw))"></span>';
+    }
+    html += '<span class="margin-r" style="left:calc(' + this.cols + ' * var(--tw-cw))"></span>';
+    html += '<span class="carriage"></span>';
+    this.ruler.innerHTML = html;
+    this.carriageEl = this.ruler.querySelector('.carriage');
+  };
+
+  // size the type so exactly `cols` characters fit across the paper
+  TypewriterBox.prototype._fit = function () {
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:100px';
+    probe.style.fontFamily = getComputedStyle(this.sheet).fontFamily;
+    probe.style.fontStyle = 'italic';
+    probe.textContent = '0000000000';
+    document.body.appendChild(probe);
+    var chPer100 = probe.getBoundingClientRect().width / 10;   // width of one character at 100px
+    probe.remove();
+    var width = this.root.clientWidth;
+    // paper margins are about 3 characters each side
+    var fs = width / ((this.cols + 6) * chPer100 / 100);
+    fs = Math.max(9, Math.min(19, fs));
+    this.root.style.setProperty('--tw-fs', fs.toFixed(2) + 'px');
+    this.root.style.setProperty('--tw-cw', (chPer100 * fs / 100).toFixed(3) + 'px');
+    var pad = Math.max(0, (width - this.cols * chPer100 * fs / 100) / 2 - 1);
+    this.root.style.setProperty('--tw-pad-x', pad.toFixed(1) + 'px');
+    this.root.style.setProperty('--tw-pad-y', (fs * 1.4).toFixed(1) + 'px');
+  };
+
+  // lay the text out the way a carriage would: fixed columns, words that
+  // would cross the right margin start the next line, a space typed at the
+  // margin returns the carriage, tabs jump to the next stop, Return starts a new line
+  TypewriterBox.prototype._layout = function () {
+    var cols = this.cols, tab = this.tabSize, s = this.text;
+    var lines = [[]], col = 0, i = 0;
+    function newline() { lines.push([]); col = 0; }
+    while (i < s.length) {
+      var ch = s[i];
+      if (ch === ' ') {
+        if (col >= cols) newline(); else { lines[lines.length - 1].push({ c: ' ', i: i }); col++; }
+        i++;
+      } else if (ch === '\n') {
+        // a full line has already returned the carriage on screen, so Return still moves down one
+        if (col >= cols) newline();
+        newline();
+        i++;
+      } else if (ch === '\t') {
+        var next = (Math.floor(col / tab) + 1) * tab;
+        if (next >= cols) newline();
+        else { while (col < next) { lines[lines.length - 1].push({ c: ' ', i: i }); col++; } }
+        i++;
+      } else {
+        var j = i;
+        while (j < s.length && s[j] !== ' ' && s[j] !== '\t' && s[j] !== '\n') j++;
+        var word = s.slice(i, j);
+        if (col + word.length > cols && col > 0 && word.length <= cols) newline();
+        for (var k = 0; k < word.length; k++) {
+          if (col >= cols) newline();
+          lines[lines.length - 1].push({ c: word[k], i: i + k });
+          col++;
+        }
+        i = j;
+      }
+    }
+    return { lines: lines, row: lines.length - 1, col: col };
+  };
+
+  TypewriterBox.prototype._render = function () {
+    var L = this._layout();
+    var html = '';
+    for (var r = 0; r < L.lines.length; r++) {
+      html += '<span class="tw-line">';
+      var line = L.lines[r];
+      for (var k = 0; k < line.length; k++) {
+        var g = line[k];
+        if (g.c === ' ') { html += '<span> </span>'; continue; }
+        // each strike lands a little differently: ink weight, height, tilt
+        var h1 = hash(g.i * 3 + 1), h2 = hash(g.i * 3 + 2), h3 = hash(g.i * 3 + 3);
+        var op = (0.78 + h1 * 0.22).toFixed(2);
+        var dy = ((h2 - 0.5) * 0.07).toFixed(3);
+        var rot = ((h3 - 0.5) * 2.4).toFixed(2);
+        html += '<span style="opacity:' + op + ';transform:translateY(' + dy + 'em) rotate(' + rot + 'deg)">' +
+                escapeHtml(g.c) + '</span>';
+      }
+      html += '</span>';
+    }
+    this.linesEl.innerHTML = html;
+
+    var row = L.row, col = L.col;
+    if (col >= this.cols) { row += 1; col = 0; }   // carriage has returned
+    this.caret.style.left = 'calc(var(--tw-pad-x) + ' + col + ' * var(--tw-cw))';
+    this.caret.style.top = 'calc(var(--tw-pad-y) + ' + (row + 1) + ' * 1.6em - 0.3em)';
+    this.carriageEl.style.left = 'calc(' + (col + 0.5) + ' * var(--tw-cw))';
+    this.carriageEl.classList.toggle('bell', col >= this.cols - 5);
+    this.posEl.textContent = 'Line ' + (row + 1) + ' · Column ' + (col + 1) + ' of ' + this.cols;
+    var left = this.maxLength - this.text.length;
+    if (left <= 100) this._say(left === 0 ? 'End of the page.' : left + ' characters left on this page.', true);
+    this._row = row; this._col = col;
+  };
+
+  function escapeHtml(c) {
+    return c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : c;
+  }
+
+  TypewriterBox.prototype._say = function (msg, warn) {
+    var el = this.msgEl;
+    el.textContent = msg;
+    el.classList.toggle('warn', !!warn);
+    clearTimeout(this._sayTimer);
+    if (!warn) this._sayTimer = setTimeout(function () { el.textContent = ''; }, 2600);
+  };
+
+  TypewriterBox.prototype._insert = function (s) {
+    if (this.text.length + s.length > this.maxLength) return;
+    this.input.value = this.input.value + s;
+    this._set(this.input.value);
+  };
+
+  TypewriterBox.prototype._set = function (v) {
+    var before = this.text;
+    this.text = v;
+    var wasBell = this._col >= this.cols - 5;
+    this._render();
+    if (!wasBell && this._col >= this.cols - 5 && v.length > before.length) this._say('Ding. Five columns to the margin.');
+    if (v !== before) this.onChange(v);
+  };
+
+  Object.defineProperty(TypewriterBox.prototype, 'value', {
+    get: function () { return this.text; },
+    set: function (v) {
+      v = clean(v || '').slice(0, this.maxLength);
+      this.input.value = v;
+      this.text = v;
+      this._render();
+    }
+  });
+
+  // pull the sheet out and put in a fresh one (the only way to remove typing)
+  TypewriterBox.prototype.clear = function () {
+    var had = this.text;
+    this.input.value = '';
+    this.text = '';
+    this._render();
+    if (had) this.onChange('');
+  };
+
+  TypewriterBox.prototype.focus = function () {
+    try { this.input.focus({ preventScroll: true }); } catch (e) { this.input.focus(); }
+  };
+
+  TypewriterBox.prototype.destroy = function () {
+    this._ro.disconnect();
+    this.root.remove();
+  };
+
+  TypewriterBox.hash = hash;   // so other renderers (the PDF) can land each strike the same way
+  global.TypewriterBox = TypewriterBox;
+})(window);
+
+// ---- demo ----
+(function () {
+  var para1 = '\tThe drive in was the same as always, and still I was gripping the wheel by the second light. Nobody did anything wrong, really.';
+  var para2 = '\tWhat helped: windows down, the long way around the park.';
+  var box = new TypewriterBox(document.getElementById('note'), {
+    cols: 52, tabSize: 5, minLines: 7, value: para1 + '\n' + para2, label: 'Note about a feeling'
+  });
+  function start() { box._fit(); box._render(); }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(start);
+  window.box = box;
+
+  var clearBtn = document.getElementById('clear'), confirmEl = document.getElementById('confirm');
+  function asking(on) { clearBtn.hidden = on; confirmEl.hidden = !on; if (on) document.getElementById('clear-no').focus(); }
+  clearBtn.addEventListener('click', function () { if (box.value) asking(true); });
+  document.getElementById('clear-no').addEventListener('click', function () { asking(false); box.focus(); });
+  document.getElementById('clear-yes').addEventListener('click', function () { box.clear(); asking(false); box.focus(); });
+})();
+</script>
