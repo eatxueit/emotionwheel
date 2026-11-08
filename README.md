@@ -52,6 +52,18 @@ python build_standalone.py
 `build_standalone.py` is a list of find-and-replace steps applied to the source. If you change code
 it patches, it stops with `pattern not found` and shows which piece no longer matches.
 
+## Hosting on GitHub Pages
+
+`.github/workflows/pages.yml` tests every push and pull request. When `main` passes, it builds the
+standalone page and publishes it as `index.html` at https://eatxueit.github.io/emotionwheel/.
+
+One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+The workflow also checks that the committed `dist/feelings-wheel-standalone.html` matches what
+`build_standalone.py` produces, so remember to rebuild and commit it after changing `src/`.
+
+Each visitor's colors, notes and added words stay in their own browser; nothing is sent anywhere.
+
 ## Added words (Words mode)
 
 Pick an outer feeling and type a word; it appears in a fourth ring just beyond it, with the path

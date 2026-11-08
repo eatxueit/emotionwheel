@@ -1,0 +1,81 @@
+# Tests every push and pull request. When main passes, builds the standalone page and
+# publishes it to GitHub Pages as index.html (https://<owner>.github.io/<repo>/).
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+
+name: Test and publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  # a newer push replaces a pending test run on a pull request, but never interrupts a deploy
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install test tools
+        run: |
+          pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Check the committed standalone page is up to date
+        run: |
+          python build_standalone.py
+          if ! git diff --quiet -- dist/; then
+            echo "::error file=dist/feelings-wheel-standalone.html::Out of date. Run 'python build_standalone.py' and commit the result."
+            exit 1
+          fi
+
+      - name: Run the tests
+        run: python -m pytest
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Build the site
+        run: |
+          python build_standalone.py
+          mkdir -p site
+          cp dist/feelings-wheel-standalone.html site/index.html
+          touch site/.nojekyll
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5

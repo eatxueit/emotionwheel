@@ -173,3 +173,20 @@ def test_a_database_from_before_added_words_is_upgraded(standalone, tmp_path):
     assert db.execute("SELECT COUNT(*) FROM feelings WHERE ring = 'added'").fetchone() == (1,)
     assert db.execute("SELECT n.text FROM notes n JOIN feelings f ON f.id = n.feeling_id").fetchall() \
         == [('An old note.',)]
+
+
+def test_is_a_complete_document(standalone):
+    # standards mode, UTF-8 and a mobile viewport: what a hosted page (GitHub Pages) needs
+    assert standalone.js('document.compatMode') == 'CSS1Compat'
+    assert standalone.js('document.characterSet') == 'UTF-8'
+    assert 'width=device-width' in standalone.js(
+        "document.querySelector('meta[name=viewport]').getAttribute('content')")
+
+
+def test_fits_a_phone_screen(context_factory, standalone_file):
+    ctx = context_factory(width=390, height=844)
+    page = ctx.new_page()
+    page.goto(standalone_file.as_uri())
+    Wheel(page).wait_ready()
+    assert page.evaluate('document.documentElement.scrollWidth') <= 390
+    assert page.evaluate("document.getElementById('wheel').getBoundingClientRect().width") <= 390 - 32
