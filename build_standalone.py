@@ -651,6 +651,17 @@ rep('''  function refreshExportAll() {
 rep("if (!downloads || !instance) return;\n    flushNote();\n    var list = allFeelings();",
     "if (!downloads || !instance || !sdb) return;\n    flushNote();\n    var list = allFeelings();")
 
+# ---------------------------------------------------------------- a complete document
+# Inside Claude the page is wrapped in a document for you. On its own (opened from disk or hosted,
+# e.g. on GitHub Pages) it needs its own doctype, character set and mobile viewport, or browsers
+# fall back to quirks mode and phones show it zoomed out at desktop width.
+s = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
+     '<style>:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }\n'
+     'body { margin: 0; font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; }\n'
+     'img { max-width: 100%; } [hidden] { display: none !important; }</style>\n'
+     '</head>\n<body>\n' + s + '\n</body>\n</html>\n')
+
 out = ROOT / 'dist' / 'feelings-wheel-standalone.html'
 out.parent.mkdir(exist_ok=True)
 out.write_text(s)
