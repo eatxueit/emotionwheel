@@ -355,7 +355,7 @@ def test_added_words_are_in_every_export(wheel, tmp_path):
 
 def test_saved_words_come_back_when_the_page_opens(context_factory, tmp_path):
     from conftest import Wheel, artifact_file
-    ctx = context_factory(claude=True)
+    ctx = context_factory(claude=True, wheel='willcox')
     ctx.add_init_script("""window.__store['word-1700000000000'] =
         { id: 1700000000000, name: 'Lustful', parent: 8, addedAt: '2026-11-01T10:00:00Z' };""")
     page = ctx.new_page()
