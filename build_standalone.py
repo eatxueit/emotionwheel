@@ -203,7 +203,8 @@ rep('''  function savedLabel() {
       var prev = writeChains[key] || Promise.resolve();
       var next = prev.catch(function () {}).then(function () {
         return text
-          ? ref.set({ level: +parts[0], index: +parts[1], text: text, updatedAt: new Date().toISOString() })
+          ? ref.set({ level: +parts[0], index: +parts[1], text: text, updatedAt: new Date().toISOString(),
+                      feeling: feelingPath(key) })
           : ref.delete();
       });
       writeChains[key] = next;
@@ -231,7 +232,7 @@ b = s.index('  el.picker.addEventListener(\'input\'')
 s = s[:a] + r'''  // ================= storage: a SQLite database inside the page =================
   // Tables (the same shape as the SQLite export):
   //   feelings(id, ring, name, parent_id, core, path, default_color, chosen_color, shown_color, added_at)
-  //     ring is core, middle, outer, or added (a word you added; parent_id is its outer feeling)
+  //     ring is core, middle, outer, or added (a word you added; parent_id is the feeling it hangs beneath)
   //   notes(feeling_id, text, typed_layout, updated_at)
   //   meta(key, value)
   // Each wheel has its own database (meta.wheel says which). A copy is kept in this browser's local
@@ -343,10 +344,9 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
     var picks = {}, ns = {}, meta = {}, w = {};
     var r = sdb.exec("SELECT f.id, f.name, f.parent_id, f.added_at FROM feelings f WHERE f.ring = 'added'");
     if (r.length) r[0].values.forEach(function (row) {
-      var parentKey = row[2] ? keyOfId(row[2]) : '';
-      if (row[0] >= ADDED_ID_MIN && row[1] && parentKey && parentKey.indexOf('3:') === 0) {
-        w[row[0]] = { id: row[0], name: String(row[1]), parent: +parentKey.slice(2), addedAt: row[3] || null };
-      }
+      var parentKey = row[2] ? keyOfId(row[2]) : null;
+      var nw = row[0] >= ADDED_ID_MIN && normalizeWord({ id: row[0], name: row[1], parentKey: parentKey, addedAt: row[3] });
+      if (nw) w[nw.id] = nw;
     });
     setWords(w);
     r = sdb.exec('SELECT id, chosen_color FROM feelings WHERE chosen_color IS NOT NULL AND chosen_color <> \'\'');
@@ -393,13 +393,16 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
       path: instance.pathOf(4, w.id)
     };
     sdb.run('INSERT OR REPLACE INTO feelings (' + COLUMNS + ', added_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-            [w.id, 'added', w.name, feelingId('3:' + w.parent), instance.nameOf(1, instance.ancestorAt(3, w.parent, 1)),
+            [w.id, 'added', w.name, feelingId(w.parentKey), instance.nameOf(1, instance.ancestorAt(4, w.id, 1)),
              trailOf(f), String(instance.defaultHexOf(4, w.id)).toLowerCase(), state.picks[f.key] || null,
              String(instance.hexOf(4, w.id)).toLowerCase(), w.addedAt]);
     persistSoon();
   }
   function unstoreWord(id) {
     if (!sdb) return;
+    // the page removes words beneath it first; this keeps the database tidy even if it didn't
+    sdb.run("DELETE FROM notes WHERE feeling_id IN (SELECT id FROM feelings WHERE parent_id = ? AND ring = 'added')", [id]);
+    sdb.run("DELETE FROM feelings WHERE parent_id = ? AND ring = 'added'", [id]);
     sdb.run('DELETE FROM notes WHERE feeling_id = ?', [id]);
     sdb.run('DELETE FROM feelings WHERE id = ?', [id]);
     persistSoon();

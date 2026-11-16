@@ -1,11 +1,14 @@
 # Feelings Wheel
 
-An interactive three-ring feelings wheel drawn with p5.js, in two versions you can switch between:
+An interactive feelings wheel drawn with p5.js, in three versions you can switch between:
 
 - **7 core feelings** (Happy, Sad, Disgusted, Angry, Fearful, Bad, Surprised): 41 middle and 82 outer,
   130 words, the wheel commonly credited to Geoffrey Roberts. This is the default.
 - **6 core feelings** (Joyful, Powerful, Peaceful, Sad, Mad, Scared): 36 middle and 72 outer,
   114 words, after Gloria Willcox's Feeling Wheel.
+- **Kleinian** (Envy, Jealousy, Love, Gratitude, Hate), after Melanie Klein: five feelings only,
+  taken from a hand drawing with its slice sizes (Hate 32%, Love 24%, Gratitude 17%, Envy 14%,
+  Jealousy 13%) and colors. It grows as you add your own words beneath the five.
 
 You can explore it, color it (colors spread to the feelings they belong to), write notes on a
 typewriter-style sheet, and add your own feelings in a fourth ring (Words mode). Everything can be
@@ -72,10 +75,12 @@ Each visitor's colors, notes and added words stay in their own browser; nothing 
 
 ## The two wheels
 
-Both are defined as data in the sketch (`FeelingsWheel.WHEELS` in `src/feelings-wheel.html`): each
-core feeling has a color and a list of middle feelings, each with its outer words. Every outer word
-gets the same width, so a core feeling's slice grows with its number of words (Happy covers 18 of
-the 7-core wheel's 82 outer words, Bad 8). To add another wheel, add an entry there.
+All three are defined as data in the sketch (`FeelingsWheel.WHEELS` in `src/feelings-wheel.html`):
+each core feeling has a name, a color, a list of middle feelings (each with its outer words) and
+optionally a weight. Without weights every outer word gets the same width, so a core feeling's slice
+grows with its number of words (Happy covers 18 of the 7-core wheel's 82 outer words, Bad 8). With
+weights, as in the Kleinian wheel, each core's slice is its share of the total. `startDeg` rotates a
+wheel. To add another wheel, add an entry there.
 
 The wheel picker is remembered per browser. Each wheel keeps its own colors, notes and added words:
 the 6-core wheel's data keeps the storage names it had before there was a choice (so older data
@@ -87,22 +92,29 @@ offers to switch to that wheel.
 
 ## Added words (Words mode)
 
-Pick an outer feeling and type a word; it appears in a fourth ring just beyond it, with the path
-core › middle › outer › your word. Each outer feeling holds up to 3 added words (`MAX_ADDED` in the
-sketch), sharing its slice in the order they were added. Names already on the wheel are refused.
-The fourth ring only shows when there are added words, or in Words mode; otherwise the wheel is
-exactly the three-ring original. Added words have colors and notes like any other feeling, and
-removing one (it asks first) removes its color and note too.
+Pick a feeling on the outermost ring and type a word; it appears in a new ring just beyond it. Words
+can go beneath any feeling that has no built-in feelings beneath it (the outer ring of the 6- and
+7-core wheels, the five feelings of the Kleinian wheel) and beneath other added words, up to four
+rings in all. A feeling's added words share its slice in the order they were added; how many fit
+depends on the slice's width (3 beneath an outer feeling of the 6- or 7-core wheel, up to 12 beneath
+a wide slice). Names already on the wheel are refused. The wheel shows only the rings it needs, plus
+one more in Words mode. Added words have colors and notes like any other feeling; removing one (it
+asks first) removes the words beneath it too, with their colors and notes.
 
 In the sketch an added word is level 4, addressed by its id (a millisecond timestamp, so ids never
-collide). `feelingsWheel.added()` lists them; `feelingsWheel.setAdded(list)` replaces them.
+collide), and hangs beneath a parent key: `'3:40'` (an outer feeling), `'1:2'` (a core) or
+`'4:<id>'` (another added word). `feelingsWheel.added()` lists them; `feelingsWheel.setAdded(list)`
+replaces them. Saved words record their parent key and their full path by name, and saved notes
+record the feeling's path, so if a wheel is ever rearranged, saved data can be matched to the right
+feelings by name.
 
 ## The color rule
 
 A color you pick shows exactly on that feeling. Every feeling above it moves toward it, by how many
 rings apart they are: 55% one ring in, 35% two rings in, 20% three rings in (`PULL` in the sketch).
 So a color on Enraged pulls Furious 55% and Mad 35%; a color on an added word pulls its outer feeling
-55%, its middle feeling 35% and its core 20%. Several picks in one branch combine as
+55%, its middle feeling 35% and its core 20%. On the Kleinian wheel the same rule follows your added
+rings. Several picks in one branch combine as
 `1 - (1 - p1)(1 - p2)...`, and the color they pull toward is the weighted average of the picks.
 
 ## Database tables
@@ -146,6 +158,9 @@ files in `window.__saved` instead of saving them.
   branch sizes, sample paths, repeated words, slice sizes), clicking uneven slices, the color pull,
   each wheel keeping its own data, older data staying on the 6-core wheel, the remembered choice,
   and exports naming the wheel
+- `test_kleinian.py`: the Kleinian wheel against the drawing (order, colors, slice sizes), clicking,
+  growing rings by adding words up to the fourth, wide slices holding more words, the color pull
+  through added rings, removing a word with the words beyond it, what gets saved, and exports
 - `test_typewriter.py`: tab stops, margins, carriage return, the Return key, no erasing, paste, clear, ruler
 - `test_standalone.py`: rebuilds `dist/`, then offline font, persistence across reload, all downloads,
   opening and refusing database files, added words in the database, and upgrading an older database
