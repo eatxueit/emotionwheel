@@ -229,3 +229,21 @@ def test_opening_another_wheels_database_offers_to_switch(standalone, tmp_path):
     w.page.wait_for_function("window.feelingsWheel.wheelId() === 'willcox'")
     w.mode('notes'); w.click('Enraged')
     assert w.note_text() == 'Six-core note.'
+
+
+def test_kleinian_words_survive_a_reload(standalone, tmp_path):
+    w = standalone
+    w.switch_wheel('klein')
+    w.add_word('Spoiling', beyond='Envy')
+    w.add_word('Begrudging', beyond='Spoiling')
+    w.mode('notes'); w.click('Begrudging'); w.type_note('Further out.')
+    w.page.wait_for_timeout(600)
+    w.page.reload()
+    w = Wheel(w.page); w.wait_ready()
+    w.page.wait_for_function("window.feelingsWheel.added().length === 2")
+    w.mode('notes'); w.click('Begrudging')
+    assert w.note_text() == 'Further out.'
+    db = sqlite3.connect(download(w.page, '#all-sqlite', tmp_path))
+    assert db.execute('''SELECT f.name, p.name FROM feelings f JOIN feelings p ON p.id = f.parent_id
+                         WHERE f.ring = 'added' ORDER BY f.id''').fetchall() == \
+        [('Spoiling', 'Envy'), ('Begrudging', 'Spoiling')]
