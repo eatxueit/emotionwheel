@@ -62,9 +62,16 @@ def _route(route):
 def context_factory(browser):
     made = []
 
-    def make(width=900, height=1500, claude=False, file_pickers=False):
+    def make(width=900, height=1500, claude=False, file_pickers=False, wheel=None):
         ctx = browser.new_context(viewport={'width': width, 'height': height}, accept_downloads=True)
         ctx.route('**/*', _route)
+        if wheel:
+            # start on this wheel. Only on the tab's first page load: later loads (reloads inside a test)
+            # leave storage alone, so switching wheels and reloading behave as they would for a person.
+            ctx.add_init_script("try { if (!sessionStorage.getItem('__test_wheel_set')) {"
+                                " sessionStorage.setItem('__test_wheel_set', '1');"
+                                " if (!localStorage.getItem('feelings-wheel-choice'))"
+                                " localStorage.setItem('feelings-wheel-choice', %r); } } catch (e) {}" % wheel)
         if claude:
             ctx.add_init_script(path=str(STUB))
         if not file_pickers:
@@ -100,7 +107,20 @@ def artifact_file(tmp_path, name):
 
 @pytest.fixture
 def wheel(context_factory, tmp_path, page_errors):
-    """The Claude version of the wheel, with the Claude stand-in."""
+    """The Claude version, on the 6-core wheel, with the Claude stand-in."""
+    ctx = context_factory(claude=True, wheel='willcox')
+    page = ctx.new_page()
+    _watch(page, page_errors)
+    page.goto(artifact_file(tmp_path, 'feelings-wheel.html').as_uri())
+    w = Wheel(page)
+    w.wait_ready()
+    yield w
+    assert not page_errors, page_errors
+
+
+@pytest.fixture
+def wheel7(context_factory, tmp_path, page_errors):
+    """The Claude version as a first-time visitor sees it: the 7-core wheel."""
     ctx = context_factory(claude=True)
     page = ctx.new_page()
     _watch(page, page_errors)
@@ -131,7 +151,8 @@ def standalone_file():
 
 @pytest.fixture
 def standalone(context_factory, standalone_file, page_errors):
-    ctx = context_factory()
+    """The standalone file, on the 6-core wheel."""
+    ctx = context_factory(wheel='willcox')
     page = ctx.new_page()
     _watch(page, page_errors)
     page.goto(standalone_file.as_uri())
@@ -162,7 +183,7 @@ class Wheel:
     def find(self, name):
         """(level, index) of a feeling by its word, including words you added (level 4)."""
         return tuple(self.page.evaluate('''name => {
-            var p = window.feelingsWheel, n = {1: 6, 2: 36, 3: 72};
+            var p = window.feelingsWheel, n = p.counts();
             for (var level = 1; level <= 3; level++)
               for (var i = 0; i < n[level]; i++)
                 if (p.nameOf(level, i) === name) return [level, i];
@@ -181,6 +202,11 @@ class Wheel:
         x, y = box['x'] + c['x'] * scale, box['y'] + c['y'] * scale
         self.page.mouse.move(x, y)
         self.page.mouse.click(x, y)
+        self.page.wait_for_timeout(100)
+
+    def switch_wheel(self, wheel_id):
+        self.page.select_option('#wheel-choice', wheel_id)
+        self.page.wait_for_function('id => window.feelingsWheel.wheelId() === id', arg=wheel_id)
         self.page.wait_for_timeout(100)
 
     def add_word(self, name, beyond):

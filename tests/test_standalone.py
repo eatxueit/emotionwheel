@@ -190,3 +190,42 @@ def test_fits_a_phone_screen(context_factory, standalone_file):
     Wheel(page).wait_ready()
     assert page.evaluate('document.documentElement.scrollWidth') <= 390
     assert page.evaluate("document.getElementById('wheel').getBoundingClientRect().width") <= 390 - 32
+
+
+# ---------------------------------------------------------------- one database per wheel
+
+def test_each_wheel_has_its_own_database(standalone, tmp_path):
+    w = standalone
+    w.mode('notes'); w.click('Enraged'); w.type_note('Six-core note.')
+    w.switch_wheel('roberts')
+    w.mode('notes'); w.click('Aroused'); w.type_note('Seven-core note.')
+    w.page.wait_for_timeout(600)
+
+    db = sqlite3.connect(download(w.page, '#all-sqlite', tmp_path))
+    assert db.execute("SELECT value FROM meta WHERE key = 'wheel'").fetchone() == ('roberts',)
+    assert db.execute('SELECT COUNT(*) FROM feelings').fetchone() == (130,)
+    assert db.execute("SELECT f.name, n.text FROM notes n JOIN feelings f ON f.id = n.feeling_id").fetchall() \
+        == [('Aroused', 'Seven-core note.')]
+
+    w.page.reload()
+    w = Wheel(w.page); w.wait_ready()
+    w.page.wait_for_function("document.getElementById('store-state').textContent !== 'Loading…'")
+    assert w.sketch('wheelId()') == 'roberts'
+    w.switch_wheel('willcox')
+    w.mode('notes'); w.click('Enraged')
+    assert w.note_text() == 'Six-core note.'
+
+
+def test_opening_another_wheels_database_offers_to_switch(standalone, tmp_path):
+    w = standalone
+    w.mode('notes'); w.click('Enraged'); w.type_note('Six-core note.')
+    six = download(w.page, '#all-sqlite', tmp_path)
+    w.switch_wheel('roberts')
+    w.page.click('#store-open')
+    w.page.set_input_files('#store-file', str(six))
+    w.page.wait_for_selector('#store-confirm', state='visible')
+    assert 'is for the 6 core feelings wheel' in w.page.inner_text('#store-confirm-text')
+    w.page.click('#store-confirm-yes')
+    w.page.wait_for_function("window.feelingsWheel.wheelId() === 'willcox'")
+    w.mode('notes'); w.click('Enraged')
+    assert w.note_text() == 'Six-core note.'

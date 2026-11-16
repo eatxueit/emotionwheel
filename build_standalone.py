@@ -92,7 +92,7 @@ rep('''  <section class="export-all" id="export-all" hidden aria-labelledby="exp
   </section>''', '''  <section class="export-all" id="export-all" aria-labelledby="data-title">
     <div class="export-all-text">
       <h2 id="data-title">Your data</h2>
-      <p>Your colors and notes live in a SQLite database inside this page. It saves automatically in this browser. To keep a copy on your disk that updates as you go, link it to a file.</p>
+      <p>Your colors, notes and added words live in a SQLite database inside this page, one for each wheel. It saves automatically in this browser. To keep a copy on your disk that updates as you go, link it to a file.</p>
     </div>
     <div class="export-all-row">
       <span class="store-state" id="store-state">Loading…</span>
@@ -165,11 +165,17 @@ s = s.replace("noteExp.msg.textContent = 'Saved';", "noteExp.msg.textContent = '
 s = s.replace("all.msg.textContent = 'Saved'; });", "all.msg.textContent = 'Downloaded'; });")
 
 # ---------------------------------------------------------------- colors: stored in the database
-rep('''  var STORE_KEY = 'feelings-wheel-picks';
-  var state = { mode: 0, picks: {} };   // picks: "level:index" -> "#rrggbb"
+rep('''  var state = { mode: 0, picks: {} };   // picks: "level:index" -> "#rrggbb"
   var current = null;                   // { level, idx }
-  try { var saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); if (saved && typeof saved === 'object') state.picks = saved; } catch (e) {}
-  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state.picks)); } catch (e) {} }''',
+  function loadPicks() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(wheelKey('feelings-wheel-picks')) || '{}');
+      if (saved && typeof saved === 'object') return saved;
+    } catch (e) {}
+    return {};
+  }
+  state.picks = loadPicks();
+  function save() { try { localStorage.setItem(wheelKey('feelings-wheel-picks'), JSON.stringify(state.picks)); } catch (e) {} }''',
     '''  var state = { mode: 0, picks: {} };   // picks: "level:index" -> "#rrggbb"
   var current = null;                   // { level, idx }
   function save() { storeColors(); }   // colors go into the page's SQLite database''')
@@ -208,7 +214,7 @@ rep('''  function savedLabel() {
         console.error('note save failed', err);
       });
     } else {
-      try { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); notesEl.status.textContent = savedLabel(); }
+      try { localStorage.setItem(wheelKey(NOTES_KEY), JSON.stringify(notes)); notesEl.status.textContent = savedLabel(); }
       catch (e) { notesEl.status.textContent = 'This browser is not keeping notes. Copy anything you want to keep.'; }
     }
   }''', '''  function savedLabel() { return storeLabel(); }
@@ -228,9 +234,9 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
   //     ring is core, middle, outer, or added (a word you added; parent_id is its outer feeling)
   //   notes(feeling_id, text, typed_layout, updated_at)
   //   meta(key, value)
-  // A copy is kept in this browser's local storage after every change. In browsers that allow it
-  // (Chrome, Edge), the database can also be linked to a .sqlite file on disk that is rewritten
-  // after every change.
+  // Each wheel has its own database (meta.wheel says which). A copy is kept in this browser's local
+  // storage after every change. In browsers that allow it (Chrome, Edge), the database can also be
+  // linked to a .sqlite file on disk that is rewritten after every change.
   var DB_KEY = 'feelings-wheel-sqlite';
   var SQL = null, sdb = null, linked = null, persistTimer = null, browserOk = true, fileOk = true;
   var canLink = typeof window.showSaveFilePicker === 'function';
@@ -303,8 +309,10 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
               'INSERT INTO feelings_new (' + COLUMNS + ') SELECT ' + COLUMNS + ' FROM feelings;' +
               'DROP TABLE feelings; ALTER TABLE feelings_new RENAME TO feelings; COMMIT;');
     }
-    var n = sdb.exec('SELECT COUNT(*) FROM feelings WHERE id <= 114')[0].values[0][0];
-    if (n >= 114) return;
+    // databases from before there was a choice of wheel are for the 6-core wheel
+    if (!metaGet('wheel')) metaSet('wheel', wheelId);
+    var n = sdb.exec("SELECT COUNT(*) FROM feelings WHERE ring <> 'added'")[0].values[0][0];
+    if (n >= wheelIds().total) return;
     var ins = sdb.prepare('INSERT OR IGNORE INTO feelings (' + COLUMNS + ') VALUES (?,?,?,?,?,?,?,?,?)');
     allFeelings().forEach(function (f) {
       if (f.level > 3) return;
@@ -312,6 +320,15 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
       ins.run([feelingId(f.key), f.ring, f.name, pk ? feelingId(pk) : null, f.core, trailOf(f), f.defaultColor, null, f.defaultColor]);
     });
     ins.free();
+  }
+
+  // which wheel a database belongs to
+  function dbWheel(d) {
+    try {
+      var r = d.exec("SELECT value FROM meta WHERE key = 'wheel'");
+      var w = r.length ? r[0].values[0][0] : null;
+      return FeelingsWheel.WHEELS[w] ? w : 'willcox';
+    } catch (e) { return 'willcox'; }
   }
 
   function isWheelDb(d) {
@@ -327,19 +344,20 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
     var r = sdb.exec("SELECT f.id, f.name, f.parent_id, f.added_at FROM feelings f WHERE f.ring = 'added'");
     if (r.length) r[0].values.forEach(function (row) {
       var parentKey = row[2] ? keyOfId(row[2]) : '';
-      if (row[0] > 114 && row[1] && parentKey.indexOf('3:') === 0) {
+      if (row[0] >= ADDED_ID_MIN && row[1] && parentKey && parentKey.indexOf('3:') === 0) {
         w[row[0]] = { id: row[0], name: String(row[1]), parent: +parentKey.slice(2), addedAt: row[3] || null };
       }
     });
     setWords(w);
     r = sdb.exec('SELECT id, chosen_color FROM feelings WHERE chosen_color IS NOT NULL AND chosen_color <> \'\'');
     if (r.length) r[0].values.forEach(function (row) {
-      if (/^#[0-9a-fA-F]{6}$/.test(row[1])) picks[keyOfId(row[0])] = row[1].toLowerCase();
+      var key = keyOfId(row[0]);
+      if (key && /^#[0-9a-fA-F]{6}$/.test(row[1])) picks[key] = row[1].toLowerCase();
     });
     r = sdb.exec('SELECT feeling_id, text, updated_at FROM notes');
     if (r.length) r[0].values.forEach(function (row) {
-      if (typeof row[1] === 'string' && row[1].trim()) {
-        var key = keyOfId(row[0]);
+      var key = keyOfId(row[0]);
+      if (key && typeof row[1] === 'string' && row[1].trim()) {
         ns[key] = row[1];
         if (row[2]) meta[key] = row[2];
       }
@@ -375,7 +393,7 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
       path: instance.pathOf(4, w.id)
     };
     sdb.run('INSERT OR REPLACE INTO feelings (' + COLUMNS + ', added_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-            [w.id, 'added', w.name, feelingId('3:' + w.parent), instance.nameOf(1, Math.floor(w.parent / 12)),
+            [w.id, 'added', w.name, feelingId('3:' + w.parent), instance.nameOf(1, instance.ancestorAt(3, w.parent, 1)),
              trailOf(f), String(instance.defaultHexOf(4, w.id)).toLowerCase(), state.picks[f.key] || null,
              String(instance.hexOf(4, w.id)).toLowerCase(), w.addedAt]);
     persistSoon();
@@ -437,7 +455,7 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
     if (!sdb) return Promise.resolve();
     metaSet('saved_at', new Date().toISOString());
     var bytes = sdb.export();
-    try { localStorage.setItem(DB_KEY, toB64(bytes)); browserOk = true; }
+    try { localStorage.setItem(wheelKey(DB_KEY), toB64(bytes)); browserOk = true; }
     catch (e) { browserOk = false; }
     var done = linked ? writeLinked(bytes) : Promise.resolve();
     return done.then(refreshStoreUi);
@@ -468,8 +486,14 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
       };
     });
   }
-  function rememberHandle(h) { return idb('readwrite', function (st) { return h ? st.put(h, 'file') : st.delete('file'); }).catch(function () {}); }
-  function recallHandle() { return idb('readonly', function (st) { return st.get('file'); }).catch(function () { return null; }); }
+  function rememberHandle(h) {
+    var k = wheelKey('file');
+    return idb('readwrite', function (st) { return h ? st.put(h, k) : st.delete(k); }).catch(function () {});
+  }
+  function recallHandle() {
+    var k = wheelKey('file');
+    return idb('readonly', function (st) { return st.get(k); }).catch(function () { return null; });
+  }
 
   // linking: whichever copy was saved more recently wins, the other is brought up to date
   function linkTo(handle) {
@@ -496,7 +520,7 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
   storeEl.link.addEventListener('click', function () {
     flushNote();
     window.showSaveFilePicker({
-      suggestedName: 'feelings-wheel.sqlite',
+      suggestedName: wheelId === 'willcox' ? 'feelings-wheel.sqlite' : 'feelings-wheel-' + wheelId + '.sqlite',
       types: [{ description: 'SQLite database', accept: { 'application/vnd.sqlite3': ['.sqlite', '.db'] } }]
     }).then(function (handle) {
       linked = handle; fileOk = true;
@@ -536,8 +560,17 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
       storeEl.msg.textContent = name + ' is not a feelings wheel database.';
       return;
     }
-    pendingOpen = { db: d, name: name, handle: handle };
-    var hasData = Object.keys(state.picks).length || Object.keys(notes).length;
+    pendingOpen = { db: d, name: name, handle: handle, wheel: dbWheel(d) };
+    if (pendingOpen.wheel !== wheelId) {
+      storeEl.confirmText.textContent = name + ' is for the ' + FeelingsWheel.WHEELS[pendingOpen.wheel].label +
+        ' wheel. Switch to that wheel and replace its colors and notes with this file?';
+      storeEl.yes.textContent = 'Switch and open';
+      storeEl.confirm.hidden = false;
+      storeEl.no.focus();
+      return;
+    }
+    storeEl.yes.textContent = 'Replace';
+    var hasData = Object.keys(state.picks).length || Object.keys(notes).length || Object.keys(words).length;
     if (!hasData) { confirmOpen(); return; }
     storeEl.confirmText.textContent = 'Replace your current colors and notes with ' + name + '?';
     storeEl.confirm.hidden = false;
@@ -547,6 +580,7 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
     var p = pendingOpen; pendingOpen = null;
     storeEl.confirm.hidden = true;
     if (!p) return;
+    if (p.wheel !== wheelId) switchWheel(p.wheel);
     flushNote();
     sdb.close(); sdb = p.db; ensureFeelings(); loadFromDb();
     storeEl.msg.textContent = 'Opened ' + p.name + '.';
@@ -598,31 +632,48 @@ s = s[:a] + r'''  // ================= storage: a SQLite database inside the pag
     });
   }
 
+  // open the current wheel's database from this browser (or start a new one)
+  function openWheelDb() {
+    if (sdb) { try { sdb.close(); } catch (e) {} }
+    sdb = null; linked = null; fileOk = true; browserOk = true;
+    storeEl.reconnect.hidden = true; storeEl.reconnect._handle = null;
+    var saved = null;
+    try { saved = localStorage.getItem(wheelKey(DB_KEY)); } catch (e) { browserOk = false; }
+    if (saved) {
+      try { sdb = new SQL.Database(fromB64(saved)); if (!isWheelDb(sdb)) { sdb.close(); sdb = null; } } catch (e) { sdb = null; }
+    }
+    if (!sdb) sdb = new SQL.Database();
+    ensureFeelings();
+    loadFromDb();
+    refreshStoreUi();
+    // a file linked on an earlier visit: reconnect now if the browser still allows it, otherwise offer a button
+    if (!canLink) return Promise.resolve();
+    var forWheel = wheelId;
+    return recallHandle().then(function (h) {
+      if (!h || !h.queryPermission || wheelId !== forWheel) return;
+      return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
+        if (wheelId !== forWheel) return;
+        if (p === 'granted') return linkTo(h);
+        storeEl.reconnect._handle = h;
+        storeEl.reconnect.textContent = 'Reconnect to ' + h.name;
+        storeEl.reconnect.hidden = false;
+      });
+    });
+  }
+
+  // switching wheels: save this wheel's database, then open the other one
+  function beforeWheelChange() { persistNow(); }
+  function reloadWheelData() {
+    storeEl.msg.textContent = '';
+    openWheelDb().catch(function () {});
+  }
+
   function initNotes() {
     whenInstance().then(function () {
       return window.initSqlJs();
     }).then(function (S) {
       SQL = S;
-      var saved = null;
-      try { saved = localStorage.getItem(DB_KEY); } catch (e) { browserOk = false; }
-      if (saved) {
-        try { sdb = new SQL.Database(fromB64(saved)); if (!isWheelDb(sdb)) { sdb.close(); sdb = null; } } catch (e) { sdb = null; }
-      }
-      if (!sdb) sdb = new SQL.Database();
-      ensureFeelings();
-      loadFromDb();
-      refreshStoreUi();
-      // a file linked on an earlier visit: reconnect now if the browser still allows it, otherwise offer a button
-      if (!canLink) return;
-      return recallHandle().then(function (h) {
-        if (!h || !h.queryPermission) return;
-        return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
-          if (p === 'granted') return linkTo(h);
-          storeEl.reconnect._handle = h;
-          storeEl.reconnect.textContent = 'Reconnect to ' + h.name;
-          storeEl.reconnect.hidden = false;
-        });
-      });
+      return openWheelDb();
     }).catch(function (e) {
       console.error('database failed to start', e);
       storeEl.state.textContent = 'The database could not start in this browser.';

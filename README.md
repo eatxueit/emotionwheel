@@ -1,6 +1,12 @@
 # Feelings Wheel
 
-An interactive three-ring feelings wheel drawn with p5.js: 6 core feelings, 36 middle and 72 outer.
+An interactive three-ring feelings wheel drawn with p5.js, in two versions you can switch between:
+
+- **7 core feelings** (Happy, Sad, Disgusted, Angry, Fearful, Bad, Surprised): 41 middle and 82 outer,
+  130 words, the wheel commonly credited to Geoffrey Roberts. This is the default.
+- **6 core feelings** (Joyful, Powerful, Peaceful, Sad, Mad, Scared): 36 middle and 72 outer,
+  114 words, after Gloria Willcox's Feeling Wheel.
+
 You can explore it, color it (colors spread to the feelings they belong to), write notes on a
 typewriter-style sheet, and add your own feelings in a fourth ring (Words mode). Everything can be
 exported as images, PDF, text or SQLite.
@@ -64,6 +70,21 @@ The workflow also checks that the committed `dist/feelings-wheel-standalone.html
 
 Each visitor's colors, notes and added words stay in their own browser; nothing is sent anywhere.
 
+## The two wheels
+
+Both are defined as data in the sketch (`FeelingsWheel.WHEELS` in `src/feelings-wheel.html`): each
+core feeling has a color and a list of middle feelings, each with its outer words. Every outer word
+gets the same width, so a core feeling's slice grows with its number of words (Happy covers 18 of
+the 7-core wheel's 82 outer words, Bad 8). To add another wheel, add an entry there.
+
+The wheel picker is remembered per browser. Each wheel keeps its own colors, notes and added words:
+the 6-core wheel's data keeps the storage names it had before there was a choice (so older data
+is still there), and the 7-core wheel's are prefixed with `roberts` (`roberts.note-3-40` in
+Claude's storage, `feelings-wheel-picks:roberts` in the browser). The standalone file keeps one
+SQLite database per wheel, and its `meta` table records which (`wheel = roberts` or `willcox`;
+databases from before there was a choice count as `willcox`). Opening another wheel's database
+offers to switch to that wheel.
+
 ## Added words (Words mode)
 
 Pick an outer feeling and type a word; it appears in a fourth ring just beyond it, with the path
@@ -92,9 +113,10 @@ notes(feeling_id, text, typed_layout, updated_at)
 meta(key, value)
 ```
 
-`ring` is `core`, `middle`, `outer` or `added`. For the built-in wheel `id` follows wheel order: each
-core, then its middle feelings, each followed by its two outer ones (Joyful = 1, Excited = 2,
-Energetic = 3, Playful = 4, Cheerful = 5, ...). Added words keep their own id (a large number) and
+`ring` is `core`, `middle`, `outer` or `added`. For the wheel's own feelings `id` follows wheel
+order: each core, then its middle feelings, each followed by its outer ones, so the 6-core wheel
+runs 1-114 (Joyful = 1, Excited = 2, Energetic = 3, Playful = 4, Cheerful = 5, ...) and the 7-core
+wheel 1-130 (Fearful = 1, Scared = 2, Helpless = 3, ...). Added words keep their own id (a large number) and
 their `parent_id` is the outer feeling they belong to. Databases saved before added words existed are
 upgraded automatically when the standalone page opens them.
 `typed_layout` is the note with the sheet's line breaks and tabs expanded.
@@ -120,6 +142,10 @@ files in `window.__saved` instead of saving them.
 - `test_wheel.py`: drawing, selection, the color rule (exact percentages), resize, theme change,
   notes, no-erase, clear, every export from the Claude version, and added words (adding, refusing
   duplicates, the 3-word limit, the 55/35/20 pull, removing, exports, loading saved words)
+- `test_seven_core.py`: the 7-core wheel against the image it was transcribed from (every core,
+  branch sizes, sample paths, repeated words, slice sizes), clicking uneven slices, the color pull,
+  each wheel keeping its own data, older data staying on the 6-core wheel, the remembered choice,
+  and exports naming the wheel
 - `test_typewriter.py`: tab stops, margins, carriage return, the Return key, no erasing, paste, clear, ruler
 - `test_standalone.py`: rebuilds `dist/`, then offline font, persistence across reload, all downloads,
   opening and refusing database files, added words in the database, and upgrading an older database

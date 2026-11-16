@@ -47,6 +47,12 @@
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
   .export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .export .note { color: var(--muted); font-size: 0.85rem; }
+  .wheel-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; font-weight: 600; min-width: 0; }
+  .wheel-pick select {
+    font: 0.9rem var(--font-ui); color: var(--fg); background: var(--bg); min-width: 0; max-width: 100%;
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer;
+  }
+  .wheel-pick select:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
   .modes { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; align-self: flex-start; }
   .modes button {
     font: 600 0.9rem var(--font-ui); border: 0; border-radius: 6px; padding: 7px 14px;
@@ -167,7 +173,7 @@
 
 <main>
   <h1>Feelings Wheel</h1>
-  <p id="intro">Six core feelings in the middle, more specific words toward the edge. Hover to trace a feeling back to its core; click to pin it, click the center to clear.</p>
+  <p id="intro">Core feelings in the middle, more specific words toward the edge. Hover to trace a feeling back to its core; click to pin it, click the center to clear.</p>
 
   <div class="toolbar">
     <div class="modes" role="group" aria-label="Mode">
@@ -176,6 +182,10 @@
       <button type="button" id="mode-notes" aria-pressed="false">Notes</button>
       <button type="button" id="mode-words" aria-pressed="false">Words</button>
     </div>
+    <label class="wheel-pick" for="wheel-choice">
+      <span>Wheel</span>
+      <select id="wheel-choice"></select>
+    </label>
     <div class="export" id="export" hidden>
       <span class="note" id="export-note" role="status" aria-live="polite"></span>
       <button type="button" class="btn" id="save-png">Save PNG</button>
@@ -270,48 +280,125 @@
 // ---- Feelings Wheel (p5.js, instance mode) ----
 //
 //   var wheel = FeelingsWheel(parentElement, {
+//     wheel: FeelingsWheel.WHEELS.roberts,   // which wheel to draw (see WHEELS below)
 //     size: 760,                 // canvas size in CSS pixels
 //     bg: '#f7f5f2', fg: '#23211f',
 //     id: 'wheel',               // id given to the <canvas>
 //     onSelect: function (level, index, name, path, hex) {}   // level 0 = nothing selected
 //   });
 //
-// Feelings are addressed as (level, index): level 1 = core (0-5), 2 = middle (0-35), 3 = outer (0-71),
-// 4 = a word you added, by its id. Added words sit in a fourth ring, beyond the outer feeling
-// they belong to; that ring only appears when there are added words or in Words mode.
+// Feelings are addressed as (level, index): level 1 = core, 2 = middle, 3 = outer, numbered clockwise
+// from the top; level 4 = a word you added, by its id. Added words sit in a fourth ring, beyond the
+// outer feeling they belong to; that ring only appears when there are added words or in Words mode.
+// Every outer feeling gets the same width, so a core feeling's slice grows with its number of words.
 // The wheel only redraws when something changes.
 (function (global) {
   'use strict';
 
-  var CORES = ['Joyful', 'Powerful', 'Peaceful', 'Sad', 'Mad', 'Scared'];
-  var HUES = ['#f2c230', '#f28c38', '#6cbf6b', '#4f8fd6', '#e0524d', '#9a6ad1'];
+  // ---------------- the wheels ----------------
+  // Each core: [name, hue, [[middle, [outer, outer, ...]], ...]], clockwise from the top.
 
-  var SEC = [
-    ['Excited', 'Cheerful', 'Creative', 'Hopeful', 'Sensuous', 'Fascinated'],
-    ['Proud', 'Respected', 'Worthwhile', 'Faithful', 'Discerning', 'Successful'],
-    ['Content', 'Thoughtful', 'Intimate', 'Loving', 'Trusting', 'Relaxed'],
-    ['Lonely', 'Depressed', 'Guilty', 'Bored', 'Tired', 'Hurt'],
-    ['Frustrated', 'Jealous', 'Hostile', 'Critical', 'Furious', 'Distant'],
-    ['Anxious', 'Insecure', 'Confused', 'Helpless', 'Rejected', 'Embarrassed']
-  ];
+  // 6 core feelings, after Gloria Willcox's Feeling Wheel. Every core has 6 middle feelings and every
+  // middle feeling 2 outer ones. (The numbering here is what saved data from earlier versions uses.)
+  var WILLCOX = {
+    id: 'willcox',
+    label: '6 core feelings',
+    sample: 'Joyful, Powerful, Peaceful, Sad, Mad, Scared',
+    cores: [
+      ['Joyful', '#f2c230', [
+        ['Excited', ['Energetic', 'Playful']], ['Cheerful', ['Amused', 'Delighted']],
+        ['Creative', ['Inspired', 'Curious']], ['Hopeful', ['Optimistic', 'Eager']],
+        ['Sensuous', ['Stimulated', 'Daring']], ['Fascinated', ['Awed', 'Absorbed']]]],
+      ['Powerful', '#f28c38', [
+        ['Proud', ['Confident', 'Accomplished']], ['Respected', ['Valued', 'Appreciated']],
+        ['Worthwhile', ['Important', 'Significant']], ['Faithful', ['Loyal', 'Devoted']],
+        ['Discerning', ['Insightful', 'Wise']], ['Successful', ['Capable', 'Triumphant']]]],
+      ['Peaceful', '#6cbf6b', [
+        ['Content', ['Satisfied', 'Fulfilled']], ['Thoughtful', ['Reflective', 'Pensive']],
+        ['Intimate', ['Close', 'Tender']], ['Loving', ['Caring', 'Warm']],
+        ['Trusting', ['Secure', 'Safe']], ['Relaxed', ['Calm', 'Serene']]]],
+      ['Sad', '#4f8fd6', [
+        ['Lonely', ['Isolated', 'Abandoned']], ['Depressed', ['Empty', 'Hopeless']],
+        ['Guilty', ['Remorseful', 'Ashamed']], ['Bored', ['Apathetic', 'Indifferent']],
+        ['Tired', ['Sleepy', 'Drained']], ['Hurt', ['Disappointed', 'Grieving']]]],
+      ['Mad', '#e0524d', [
+        ['Frustrated', ['Irritated', 'Annoyed']], ['Jealous', ['Envious', 'Possessive']],
+        ['Hostile', ['Aggressive', 'Provoked']], ['Critical', ['Skeptical', 'Dismissive']],
+        ['Furious', ['Enraged', 'Livid']], ['Distant', ['Withdrawn', 'Cold']]]],
+      ['Scared', '#9a6ad1', [
+        ['Anxious', ['Worried', 'Overwhelmed']], ['Insecure', ['Inadequate', 'Inferior']],
+        ['Confused', ['Bewildered', 'Lost']], ['Helpless', ['Powerless', 'Exposed']],
+        ['Rejected', ['Excluded', 'Unwanted']], ['Embarrassed', ['Foolish', 'Awkward']]]]
+    ]
+  };
 
-  // two outer words per middle feeling, in the same order as SEC
-  var TER = [
-    ['Energetic', 'Playful', 'Amused', 'Delighted', 'Inspired', 'Curious',
-     'Optimistic', 'Eager', 'Stimulated', 'Daring', 'Awed', 'Absorbed'],
-    ['Confident', 'Accomplished', 'Valued', 'Appreciated', 'Important', 'Significant',
-     'Loyal', 'Devoted', 'Insightful', 'Wise', 'Capable', 'Triumphant'],
-    ['Satisfied', 'Fulfilled', 'Reflective', 'Pensive', 'Close', 'Tender',
-     'Caring', 'Warm', 'Secure', 'Safe', 'Calm', 'Serene'],
-    ['Isolated', 'Abandoned', 'Empty', 'Hopeless', 'Remorseful', 'Ashamed',
-     'Apathetic', 'Indifferent', 'Sleepy', 'Drained', 'Disappointed', 'Grieving'],
-    ['Irritated', 'Annoyed', 'Envious', 'Possessive', 'Aggressive', 'Provoked',
-     'Skeptical', 'Dismissive', 'Enraged', 'Livid', 'Withdrawn', 'Cold'],
-    ['Worried', 'Overwhelmed', 'Inadequate', 'Inferior', 'Bewildered', 'Lost',
-     'Powerless', 'Exposed', 'Excluded', 'Unwanted', 'Foolish', 'Awkward']
-  ];
+  // 7 core feelings, the wheel commonly credited to Geoffrey Roberts. Branches are uneven
+  // (Happy has 9 middle feelings, Bad and Surprised 4), and a few words appear twice.
+  var ROBERTS = {
+    id: 'roberts',
+    label: '7 core feelings',
+    sample: 'Happy, Sad, Disgusted, Angry, Fearful, Bad, Surprised',
+    cores: [
+      ['Fearful', '#f4ad3d', [
+        ['Scared', ['Helpless', 'Frightened']], ['Anxious', ['Overwhelmed', 'Worried']],
+        ['Insecure', ['Inadequate', 'Inferior']], ['Weak', ['Worthless', 'Insignificant']],
+        ['Rejected', ['Excluded', 'Persecuted']], ['Threatened', ['Nervous', 'Exposed']]]],
+      ['Angry', '#ea6464', [
+        ['Let down', ['Betrayed', 'Resentful']], ['Humiliated', ['Disrespected', 'Ridiculed']],
+        ['Bitter', ['Indignant', 'Violated']], ['Mad', ['Furious', 'Jealous']],
+        ['Aggressive', ['Provoked', 'Hostile']], ['Frustrated', ['Infuriated', 'Annoyed']],
+        ['Distant', ['Withdrawn', 'Numb']], ['Critical', ['Skeptical', 'Dismissive']]]],
+      ['Disgusted', '#8a8a8a', [
+        ['Disapproving', ['Judgmental', 'Embarrassed']], ['Disappointed', ['Appalled', 'Revolted']],
+        ['Awful', ['Nauseated', 'Detestable']], ['Repelled', ['Horrified', 'Hesitant']]]],
+      ['Sad', '#5b8fd0', [
+        ['Hurt', ['Embarrassed', 'Disappointed']], ['Depressed', ['Inferior', 'Empty']],
+        ['Guilty', ['Remorseful', 'Ashamed']], ['Despair', ['Powerless', 'Grief']],
+        ['Vulnerable', ['Fragile', 'Victimized']], ['Lonely', ['Abandoned', 'Isolated']]]],
+      ['Happy', '#efd632', [
+        ['Optimistic', ['Inspired', 'Hopeful']], ['Trusting', ['Intimate', 'Sensitive']],
+        ['Peaceful', ['Thankful', 'Loving']], ['Powerful', ['Creative', 'Courageous']],
+        ['Accepted', ['Valued', 'Respected']], ['Proud', ['Confident', 'Successful']],
+        ['Interested', ['Inquisitive', 'Curious']], ['Content', ['Joyful', 'Free']],
+        ['Playful', ['Cheeky', 'Aroused']]]],
+      ['Surprised', '#9b74cc', [
+        ['Excited', ['Energetic', 'Eager']], ['Amazed', ['Awe', 'Astonished']],
+        ['Confused', ['Perplexed', 'Disillusioned']], ['Startled', ['Dismayed', 'Shocked']]]],
+      ['Bad', '#45b383', [
+        ['Tired', ['Unfocussed', 'Sleepy']], ['Stressed', ['Out of control', 'Overwhelmed']],
+        ['Busy', ['Rushed', 'Pressured']], ['Bored', ['Apathetic', 'Indifferent']]]]
+    ]
+  };
 
-  var COUNT = { 1: 6, 2: 36, 3: 72 };
+  var WHEELS = { roberts: ROBERTS, willcox: WILLCOX };
+
+  // a wheel definition flattened into numbered rings
+  function compile(def) {
+    var W = {
+      id: def.id, label: def.label,
+      names: { 1: [], 2: [], 3: [] }, parent: { 2: [], 3: [] }, hue: [],
+      first: { 1: [], 2: [] }, count: { 1: [], 2: [] },   // which outer feelings each core/middle covers
+      children: { 1: [], 2: [] }
+    };
+    def.cores.forEach(function (core, c) {
+      W.names[1].push(core[0]); W.hue.push(rgbOf(core[1])); W.children[1].push([]);
+      W.first[1].push(W.names[3].length);
+      core[2].forEach(function (mid) {
+        var m = W.names[2].length;
+        W.names[2].push(mid[0]); W.parent[2].push(c); W.children[1][c].push(m); W.children[2].push([]);
+        W.first[2].push(W.names[3].length);
+        mid[1].forEach(function (outer) {
+          W.children[2][m].push(W.names[3].length);
+          W.names[3].push(outer); W.parent[3].push(m);
+        });
+        W.count[2].push(mid[1].length);
+      });
+      W.count[1].push(W.names[3].length - W.first[1][c]);
+    });
+    W.n = { 1: W.names[1].length, 2: W.names[2].length, 3: W.names[3].length };
+    return W;
+  }
+
   var MODE_EXPLORE = 0, MODE_COLOR = 1, MODE_NOTES = 2, MODE_WORDS = 3;
   var MAX_ADDED = 3;   // added words per outer feeling
 
@@ -343,22 +430,6 @@
     return '#' + round(c).map(function (v) { return (v < 16 ? '0' : '') + v.toString(16); }).join('');
   }
 
-  // ---------------- the built-in wheel ----------------
-  function coreOf(level, i) { return level === 1 ? i : level === 2 ? Math.floor(i / 6) : Math.floor(i / 12); }
-  function secOf(level, i) { return level === 2 ? i : level === 3 ? Math.floor(i / 2) : -1; }
-  function nameOf(level, i) {
-    var c = coreOf(level, i);
-    return level === 1 ? CORES[c] : level === 2 ? SEC[c][i % 6] : TER[c][i % 12];
-  }
-  function pathOf(level, i) {
-    var c = coreOf(level, i);
-    if (level === 3) return CORES[c] + ' › ' + SEC[c][secOf(3, i) % 6];
-    if (level === 2) return CORES[c];
-    return '';
-  }
-  function segStart(level, i) { return -HALF_PI + i * TAU / COUNT[level]; }
-  function segSpan(level) { return TAU / COUNT[level]; }
-
   // dark text on light colors, light text on dark ones
   function inkFor(c) {
     return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] > 140 ? INK : LIGHT_INK;
@@ -368,6 +439,7 @@
     opts = opts || {};
     var api = { ready: false, frameCount: 0 };
     var onSelect = opts.onSelect || function () {};
+    var W = compile(opts.wheel || ROBERTS);
     var st = {
       S: opts.size || 600,
       bg: rgbOf(opts.bg || '#ffffff'),
@@ -383,11 +455,11 @@
     };
 
     // ---------------- structure, including added words ----------------
-    function exists(level, i) { return level === 4 ? !!st.added[i] : i >= 0 && i < COUNT[level]; }
+    function leafSpan() { return TAU / W.n[3]; }
+    function exists(level, i) { return level === 4 ? !!st.added[i] : i >= 0 && i < W.n[level]; }
     function parentOf(level, i) {
       if (level === 4) return [3, st.added[i].parent];
-      if (level === 3) return [2, Math.floor(i / 2)];
-      return [1, Math.floor(i / 6)];
+      return [level - 1, W.parent[level][i]];
     }
     // the index of this feeling's ancestor on ring k (or itself when k is its own ring)
     function ancestorAt(level, i, k) {
@@ -402,17 +474,33 @@
       }
       return true;
     }
-    function nameAny(level, i) { return level === 4 ? (st.added[i] ? st.added[i].name : '') : nameOf(level, i); }
+    function nameAny(level, i) {
+      if (level === 4) return st.added[i] ? st.added[i].name : '';
+      return W.names[level][i] || '';
+    }
+    // the feelings above this one, joined with ›
     function pathAny(level, i) {
-      if (level !== 4) return pathOf(level, i);
-      var p = st.added[i] ? st.added[i].parent : 0;
-      return pathOf(3, p) + ' › ' + nameOf(3, p);
+      if (level === 4 && !st.added[i]) return '';
+      var parts = [];
+      for (var k = 1; k < level; k++) parts.push(W.names[k][ancestorAt(level, i, k)]);
+      return parts.join(' › ');
     }
 
     // the original palette: core hue, lightened toward white on each outer ring
     function defaultColor(level, i) {
-      var h = rgbOf(HUES[ancestorAt(level, i, 1)]);
+      var h = W.hue[ancestorAt(level, i, 1)];
       return level === 1 ? h : mix(h, WHITE, level === 2 ? 0.38 : level === 3 ? 0.62 : 0.76);
+    }
+
+    // where a segment sits: [start angle, span], measured clockwise from the top
+    function relAngles(level, i) {
+      if (level === 4) { var s = st.slots[i]; return [s.rel, s.span]; }
+      if (level === 3) return [i * leafSpan(), leafSpan()];
+      return [W.first[level][i] * leafSpan(), W.count[level][i] * leafSpan()];
+    }
+    function segAngles(level, i) {
+      var r = relAngles(level, i);
+      return [-HALF_PI + r[0], r[1]];
     }
 
     // where each added word sits: its outer feeling's slice, shared evenly in the order they were added
@@ -423,13 +511,9 @@
         (st.children[p] = st.children[p] || []).push(id);
       });
       Object.keys(st.children).forEach(function (p) {
-        var ids = st.children[p], span = TAU / 72 / ids.length;
-        ids.forEach(function (id, j) { st.slots[id] = { rel: +p * TAU / 72 + j * span, span: span }; });
+        var ids = st.children[p], span = leafSpan() / ids.length;
+        ids.forEach(function (id, j) { st.slots[id] = { rel: +p * leafSpan() + j * span, span: span }; });
       });
-    }
-    function segAngles(level, i) {
-      if (level === 4) { var s = st.slots[i]; return [-HALF_PI + s.rel, s.span]; }
-      return [segStart(level, i), segSpan(level)];
     }
 
     // ---------------- the color algorithm ----------------
@@ -527,7 +611,7 @@
 
       // in Words mode, an outer feeling with nothing added yet shows a dashed slot beyond it
       function drawEmptySlot(p) {
-        var a0 = segStart(3, p), span = segSpan(3);
+        var ang = segAngles(3, p), a0 = ang[0], span = ang[1];
         g.noFill();
         strokeC(mix(FG, BG, 0.45));
         g.strokeWeight(S * 0.0025);
@@ -546,13 +630,18 @@
         return lit(level, i) ? ink : mix(ink, BG, 0.65);
       }
 
+      // set a text size, shrunk if the text would be wider than maxW
+      function fitSize(s, size, maxW) {
+        g.textSize(size);
+        var w = g.textWidth(s);
+        if (w > maxW) g.textSize(size * maxW / w);
+      }
+
       // a label along the radius; long words shrink until they fit the ring, and the text is never
       // taller than its slice is wide
       function radialLabel(s, a, r, ink, size, maxW, maxH) {
         if (maxH && size > maxH) size = maxH;
-        g.textSize(size);
-        var w = g.textWidth(s);
-        if (w > maxW) g.textSize(size * maxW / w);
+        fitSize(s, size, maxW);
         g.push();
         g.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
         g.rotate(a);
@@ -562,22 +651,14 @@
         g.pop();
       }
 
-      // text in the center circle, shrunk to fit inside it
-      function centerText(s, y, size, maxW) {
-        g.textSize(size);
-        var w = g.textWidth(s);
-        if (w > maxW) g.textSize(size * maxW / w);
-        g.text(s, cx, y);
-      }
-
       g.background(BG[0], BG[1], BG[2]);
       g.textFont(FONT);
       g.textAlign(g.CENTER, g.CENTER);
 
-      var i, ids = Object.keys(st.added).map(Number);
-      for (i = 0; i < 6; i++) drawSeg(1, i);
-      for (i = 0; i < 36; i++) drawSeg(2, i);
-      for (i = 0; i < 72; i++) drawSeg(3, i);
+      var i, ang, ids = Object.keys(st.added).map(Number);
+      for (i = 0; i < W.n[1]; i++) drawSeg(1, i);
+      for (i = 0; i < W.n[2]; i++) drawSeg(2, i);
+      for (i = 0; i < W.n[3]; i++) drawSeg(3, i);
       if (v.ring4) {
         if (v.mode === MODE_WORDS && v.sel[0] === 3 && !st.children[v.sel[1]]) drawEmptySlot(v.sel[1]);
         ids.forEach(function (id) { drawSeg(4, id); });
@@ -585,29 +666,32 @@
 
       // labels
       g.noStroke();
-      g.textSize(S * 0.026);
-      for (i = 0; i < 6; i++) {          // core labels follow the ring, flipped on the bottom half
-        var a = segStart(1, i) + TAU / 12, r = (R[0] + R[1]) / 2;
+      for (i = 0; i < W.n[1]; i++) {     // core labels follow the ring, flipped on the bottom half
+        ang = segAngles(1, i);
+        var a = ang[0] + ang[1] / 2, r = (R[0] + R[1]) / 2;
+        fitSize(W.names[1][i], S * 0.026, ang[1] * r * 0.86);
         g.push();
         g.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
         g.rotate(Math.sin(a) > 0.01 ? a - HALF_PI : a + HALF_PI);
         fillC(labelInk(1, i));
-        g.text(CORES[i], 0, 0);
+        g.text(W.names[1][i], 0, 0);
         g.pop();
       }
-      for (i = 0; i < 36; i++) {         // the other rings' labels run along the radius
-        radialLabel(nameOf(2, i), segStart(2, i) + TAU / 72, (R[1] + R[2]) / 2, labelInk(2, i),
-                    S * 0.0185, (R[2] - R[1]) - S * 0.014);
+      for (i = 0; i < W.n[2]; i++) {     // the other rings' labels run along the radius
+        ang = segAngles(2, i);
+        radialLabel(W.names[2][i], ang[0] + ang[1] / 2, (R[1] + R[2]) / 2, labelInk(2, i),
+                    S * 0.0185, (R[2] - R[1]) - S * 0.014, ang[1] * (R[1] + R[2]) / 2 * 0.8);
       }
-      for (i = 0; i < 72; i++) {
-        radialLabel(nameOf(3, i), segStart(3, i) + TAU / 144, (R[2] + R[3]) / 2, labelInk(3, i),
-                    S * 0.0175, (R[3] - R[2]) - S * 0.014);
+      for (i = 0; i < W.n[3]; i++) {
+        ang = segAngles(3, i);
+        radialLabel(W.names[3][i], ang[0] + ang[1] / 2, (R[2] + R[3]) / 2, labelInk(3, i),
+                    S * 0.0175, (R[3] - R[2]) - S * 0.014, ang[1] * (R[2] + R[3]) / 2 * 0.85);
       }
       if (v.ring4) {
         ids.forEach(function (id) {
-          var ang = segAngles(4, id), rr = (R[3] + R[4]) / 2;
-          radialLabel(st.added[id].name, ang[0] + ang[1] / 2, rr, labelInk(4, id),
-                      S * 0.0175, (R[4] - R[3]) - S * 0.014, ang[1] * rr * 0.85);
+          var an = segAngles(4, id), rr = (R[3] + R[4]) / 2;
+          radialLabel(st.added[id].name, an[0] + an[1] / 2, rr, labelInk(4, id),
+                      S * 0.0175, (R[4] - R[3]) - S * 0.014, an[1] * rr * 0.85);
         });
       }
 
@@ -616,6 +700,7 @@
       fillC(BG);
       g.ellipse(cx, cy, R[0] * 2 - S * 0.006, R[0] * 2 - S * 0.006);
       var soft = mix(FG, BG, 0.4), inner = R[0] * 1.8;
+      function centerText(s, y, size) { fitSize(s, size, inner); g.text(s, cx, y); }
 
       if (aL === 0) {
         fillC(soft);
@@ -623,8 +708,8 @@
                    : v.mode === MODE_NOTES ? ['Pick a feeling', 'to write about']
                    : v.mode === MODE_WORDS ? ['Pick an outer', 'feeling to extend']
                    : ['How are', 'you feeling?'];
-        centerText(prompt[0], cy - S * 0.014, S * 0.02, inner);
-        centerText(prompt[1], cy + S * 0.014, S * 0.02, inner);
+        centerText(prompt[0], cy - S * 0.014, S * 0.02);
+        centerText(prompt[1], cy + S * 0.014, S * 0.02);
         return;
       }
 
@@ -634,11 +719,11 @@
       g.ellipse(cx, cy - S * 0.052, S * 0.018, S * 0.018);
       g.noStroke();
       fillC(FG);
-      centerText(nameAny(aL, aI), cy - S * 0.012, S * 0.027, inner);
+      centerText(nameAny(aL, aI), cy - S * 0.012, S * 0.027);
 
       fillC(soft);
       var trail = pathAny(aL, aI);
-      if (trail) centerText(trail, cy + S * 0.025, S * 0.016, inner);
+      if (trail) centerText(trail, cy + S * 0.025, S * 0.016);
       g.textSize(S * 0.016);
       if (v.sel[0] > 0 && v.mode === MODE_EXPLORE) g.text('pinned', cx, cy + S * 0.055);
       if (v.mode === MODE_NOTES && st.noted[aL][aI]) g.text('has a note', cx, cy + S * 0.055);
@@ -664,8 +749,10 @@
       var a = Math.atan2(dy, dx) + HALF_PI;
       while (a < 0) a += TAU;
       while (a >= TAU) a -= TAU;
+      // every ring is made of whole outer feelings, so find the outer one under the point first
+      var leaf = Math.min(W.n[3] - 1, Math.floor(a / leafSpan()));
       for (var level = 1; level <= 3; level++) {
-        if (d >= F[level - 1] && d < F[level]) return [level, Math.floor(a / (TAU / COUNT[level]))];
+        if (d >= F[level - 1] && d < F[level]) return [level, ancestorAt(3, leaf, level)];
       }
       if (F.length > 4 && d >= F[3] && d < F[4]) {
         for (var id in st.slots) {
@@ -673,7 +760,7 @@
           if (a >= s.rel && a < s.rel + s.span) return [4, +id];
         }
         // the empty space beyond an outer feeling picks that feeling in Words mode
-        if (st.mode === MODE_WORDS) return [3, Math.floor(a / (TAU / 72))];
+        if (st.mode === MODE_WORDS) return [3, leaf];
       }
       return [0, -1];
     }
@@ -733,13 +820,33 @@
     api.defaultHexOf = function (level, i) { return hexOfRgb(defaultColor(level, i)); };
     api.nameOf = nameAny;
     api.pathOf = pathAny;
+    api.ancestorAt = function (level, i, k) { return ancestorAt(level, i, k); };
     api.selection = function () { return st.sel.slice(); };
 
-    // the words you added: [{ id, name, parent }], parent = index of an outer feeling (0-71)
+    // the wheel being drawn: its id, how many feelings each ring has, and which feelings sit under which
+    api.wheelId = function () { return W.id; };
+    api.counts = function () { return { 1: W.n[1], 2: W.n[2], 3: W.n[3] }; };
+    api.childrenOf = function (level, i) { return level === 3 ? api.addedBeyond(i) : W.children[level][i].slice(); };
+
+    // switch to another wheel; everything specific to the old one (colors, notes, added words,
+    // selection) is cleared, and the page puts back what belongs to the new one
+    api.setWheel = function (def) {
+      W = compile(def);
+      st.picks = { 1: {}, 2: {}, 3: {}, 4: {} };
+      st.noted = { 1: {}, 2: {}, 3: {}, 4: {} };
+      st.added = {}; st.slots = {}; st.children = {};
+      st.hov = [0, -1];
+      var hadSel = st.sel[0] !== 0;
+      st.sel = [0, -1];
+      redraw();
+      if (hadSel) notify();
+    };
+
+    // the words you added: [{ id, name, parent }], parent = index of an outer feeling
     api.setAdded = function (list) {
       st.added = {};
       (list || []).forEach(function (w) {
-        if (w && w.parent >= 0 && w.parent < 72) st.added[w.id] = { id: w.id, name: String(w.name), parent: w.parent };
+        if (w && w.parent >= 0 && w.parent < W.n[3]) st.added[w.id] = { id: w.id, name: String(w.name), parent: w.parent };
       });
       layoutAdded();
       var lostSel = st.sel[0] === 4 && !st.added[st.sel[1]];
@@ -796,6 +903,8 @@
     return api;
   }
 
+  FeelingsWheel.WHEELS = WHEELS;
+  FeelingsWheel.DEFAULT_WHEEL = 'roberts';
   FeelingsWheel.PULL = PULL;
   FeelingsWheel.PULL_PARENT = PULL[1];
   FeelingsWheel.PULL_GRANDPARENT = PULL[2];
@@ -1119,11 +1228,25 @@ window.COURIER_PRIME_TTF = {
   var instance = null;   // the FeelingsWheel sketch, also reachable as window.feelingsWheel
 
   // page-side state (colors, notes, mode) that the sketch draws from
-  var STORE_KEY = 'feelings-wheel-picks';
+  // which wheel: remembered in this browser; the 7-core wheel unless you chose another
+  var CHOICE_KEY = 'feelings-wheel-choice';
+  var wheelId = FeelingsWheel.DEFAULT_WHEEL;
+  try { var savedWheel = localStorage.getItem(CHOICE_KEY); if (FeelingsWheel.WHEELS[savedWheel]) wheelId = savedWheel; } catch (e) {}
+  // each wheel keeps its own colors, notes and added words. The 6-core wheel keeps the storage
+  // names it has always had, so data saved before there was a choice stays where it was.
+  function wheelKey(base) { return wheelId === 'willcox' ? base : base + ':' + wheelId; }
+
   var state = { mode: 0, picks: {} };   // picks: "level:index" -> "#rrggbb"
   var current = null;                   // { level, idx }
-  try { var saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); if (saved && typeof saved === 'object') state.picks = saved; } catch (e) {}
-  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state.picks)); } catch (e) {} }
+  function loadPicks() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(wheelKey('feelings-wheel-picks')) || '{}');
+      if (saved && typeof saved === 'object') return saved;
+    } catch (e) {}
+    return {};
+  }
+  state.picks = loadPicks();
+  function save() { try { localStorage.setItem(wheelKey('feelings-wheel-picks'), JSON.stringify(state.picks)); } catch (e) {} }
 
   var el = {
     explore: document.getElementById('mode-explore'),
@@ -1196,8 +1319,19 @@ window.COURIER_PRIME_TTF = {
     count: document.getElementById('note-count')
   };
 
-  function docIdFor(key) { return 'note-' + key.replace(':', '-'); }
-  function keyFromDocId(id) { var m = /^note-(\d)-(\d+)$/.exec(id); return m ? m[1] + ':' + m[2] : null; }
+  // account-storage documents: the 6-core wheel's have plain names ("note-3-56", "word-<id>");
+  // other wheels' start with the wheel's id ("roberts.note-3-40")
+  function docPrefix() { return wheelId === 'willcox' ? '' : wheelId + '.'; }
+  function ownDocId(id) {                // the document's name without its wheel prefix, or null if it's another wheel's
+    var pre = docPrefix();
+    if (pre) return id.indexOf(pre) === 0 ? id.slice(pre.length) : null;
+    return id.indexOf('.') < 0 ? id : null;
+  }
+  function docIdFor(key) { return docPrefix() + 'note-' + key.replace(':', '-'); }
+  function keyFromDocId(id) {
+    var own = ownDocId(id), m = own && /^note-(\d)-(\d+)$/.exec(own);
+    return m ? m[1] + ':' + m[2] : null;
+  }
 
   function refreshNotesPanel() {
     var n = Object.keys(notes).length;
@@ -1242,7 +1376,7 @@ window.COURIER_PRIME_TTF = {
         console.error('note save failed', err);
       });
     } else {
-      try { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); notesEl.status.textContent = savedLabel(); }
+      try { localStorage.setItem(wheelKey(NOTES_KEY), JSON.stringify(notes)); notesEl.status.textContent = savedLabel(); }
       catch (e) { notesEl.status.textContent = 'This browser is not keeping notes. Copy anything you want to keep.'; }
     }
   }
@@ -1454,7 +1588,7 @@ window.COURIER_PRIME_TTF = {
 
   // a name already on the wheel, built in or added (case doesn't matter)
   function nameTaken(name) {
-    var n = name.toLowerCase(), counts = { 1: 6, 2: 36, 3: 72 };
+    var n = name.toLowerCase(), counts = instance.counts();
     for (var level = 1; level <= 3; level++) {
       for (var i = 0; i < counts[level]; i++) if (instance.nameOf(level, i).toLowerCase() === n) return true;
     }
@@ -1569,10 +1703,11 @@ window.COURIER_PRIME_TTF = {
 
   function useBrowserNotes() {
     notesWhere = 'browser';
-    try { var saved = JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); if (saved && typeof saved === 'object') notes = saved; } catch (e) {}
+    notes = {}; notesMeta = {};
+    try { var saved = JSON.parse(localStorage.getItem(wheelKey(NOTES_KEY)) || '{}'); if (saved && typeof saved === 'object') notes = saved; } catch (e) {}
     var w = {};
     try {
-      var list = JSON.parse(localStorage.getItem(WORDS_KEY) || '[]');
+      var list = JSON.parse(localStorage.getItem(wheelKey(WORDS_KEY)) || '[]');
       if (Array.isArray(list)) list.forEach(function (x) { if (x && x.id && x.name) w[x.id] = x; });
     } catch (e) {}
     setWords(w);
@@ -1585,18 +1720,55 @@ window.COURIER_PRIME_TTF = {
   function wordsReady() { return notesWhere !== 'none'; }
   function storeWord(w) {
     if (notesWhere === 'account' && notesDb) {
-      notesDb.doc('word-' + w.id).set({ id: w.id, name: w.name, parent: w.parent, addedAt: w.addedAt })
+      notesDb.doc(docPrefix() + 'word-' + w.id).set({ id: w.id, name: w.name, parent: w.parent, addedAt: w.addedAt })
         .catch(function () { sayWords('Could not save ' + w.name + '. It will be gone after a reload.'); });
     } else {
-      try { localStorage.setItem(WORDS_KEY, JSON.stringify(wordList())); } catch (e) {}
+      try { localStorage.setItem(wheelKey(WORDS_KEY), JSON.stringify(wordList())); } catch (e) {}
     }
   }
   function unstoreWord(id) {
     if (notesWhere === 'account' && notesDb) {
-      notesDb.doc('word-' + id).delete().catch(function () {});
+      notesDb.doc(docPrefix() + 'word-' + id).delete().catch(function () {});
     } else {
-      try { localStorage.setItem(WORDS_KEY, JSON.stringify(wordList().filter(function (w) { return w.id !== id; }))); } catch (e) {}
+      try { localStorage.setItem(wheelKey(WORDS_KEY), JSON.stringify(wordList().filter(function (w) { return w.id !== id; }))); } catch (e) {}
     }
+  }
+
+  // switching wheels: notes and words are written as you go, so nothing to finish first;
+  // afterwards, read the new wheel's data from the last account snapshot or from this browser
+  var lastSnap = null;
+  function beforeWheelChange() {}
+  function reloadWheelData() {
+    state.picks = loadPicks();
+    notes = {}; notesMeta = {};
+    if (notesWhere === 'account' && lastSnap) applySnapshot(lastSnap);
+    else if (notesWhere === 'browser') useBrowserNotes();
+  }
+
+  function applySnapshot(snap) {
+    lastSnap = snap;
+    var editingKey = (noteBoxFocused() && current) ? current.level + ':' + current.idx : null;
+    var next = {}, nextWords = {}, outers = instance ? instance.counts()[3] : 0;
+    snap.docs.forEach(function (d) {
+      var key = keyFromDocId(d.id), body = d.data(), own = ownDocId(d.id);
+      var wm = own && /^word-(\d+)$/.exec(own);
+      if (wm && body && typeof body.name === 'string' && body.parent >= 0 && body.parent < outers) {
+        nextWords[+wm[1]] = { id: +wm[1], name: body.name, parent: body.parent, addedAt: body.addedAt || null };
+        return;
+      }
+      if (key && body && typeof body.text === 'string' && body.text.trim()) {
+        next[key] = body.text;
+        if (typeof body.updatedAt === 'string') notesMeta[key] = body.updatedAt;
+      }
+    });
+    // keep whatever is being typed right now
+    if (editingKey && pendingKey === editingKey) {
+      if (notes[editingKey]) next[editingKey] = notes[editingKey]; else delete next[editingKey];
+    }
+    notes = next;
+    setWords(nextWords);
+    applyNotesToSketch();
+    refreshNotesPanel();
   }
 
   function initNotes() {
@@ -1613,28 +1785,7 @@ window.COURIER_PRIME_TTF = {
           clearTimeout(timeout);
           if (fellBack) return;
           notesWhere = 'account';
-          var editingKey = (noteBoxFocused() && current) ? current.level + ':' + current.idx : null;
-          var next = {}, nextWords = {};
-          snap.docs.forEach(function (d) {
-            var key = keyFromDocId(d.id), body = d.data();
-            var wm = /^word-(\d+)$/.exec(d.id);
-            if (wm && body && typeof body.name === 'string' && body.parent >= 0 && body.parent < 72) {
-              nextWords[+wm[1]] = { id: +wm[1], name: body.name, parent: body.parent, addedAt: body.addedAt || null };
-              return;
-            }
-            if (key && body && typeof body.text === 'string' && body.text.trim()) {
-              next[key] = body.text;
-              if (typeof body.updatedAt === 'string') notesMeta[key] = body.updatedAt;
-            }
-          });
-          // keep whatever is being typed right now
-          if (editingKey && pendingKey === editingKey) {
-            if (notes[editingKey]) next[editingKey] = notes[editingKey]; else delete next[editingKey];
-          }
-          notes = next;
-          setWords(nextWords);
-          applyNotesToSketch();
-          refreshNotesPanel();
+          applySnapshot(snap);
         }, function (err) {
           clearTimeout(timeout);
           console.error('notes unavailable', err);
@@ -1691,6 +1842,36 @@ window.COURIER_PRIME_TTF = {
   }
   modeBtns.forEach(function (b, i) { b.addEventListener('click', function () { setMode(i); }); });
 
+  // ---------------- choosing a wheel ----------------
+  var wheelSelect = document.getElementById('wheel-choice');
+  Object.keys(FeelingsWheel.WHEELS).forEach(function (id) {
+    var w = FeelingsWheel.WHEELS[id], opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = w.label + ' (' + w.sample.split(', ').slice(0, 3).join(', ') + '…)';
+    wheelSelect.appendChild(opt);
+  });
+  wheelSelect.value = wheelId;
+  wheelSelect.addEventListener('change', function () { switchWheel(wheelSelect.value); });
+
+  // each wheel has its own colors, notes and added words; switching shows the other wheel's
+  function switchWheel(id) {
+    if (id === wheelId || !FeelingsWheel.WHEELS[id] || !instance) { wheelSelect.value = wheelId; return; }
+    flushNote();
+    beforeWheelChange();
+    wheelId = id;
+    try { localStorage.setItem(CHOICE_KEY, id); } catch (e) {}
+    current = null;
+    wordsStatus = '';
+    state.picks = {}; notes = {}; notesMeta = {}; words = {};
+    instance.setWheel(FeelingsWheel.WHEELS[id]);
+    reloadWheelData();
+    pushState();
+    wheelSelect.value = id;
+    refreshPanel();
+    refreshNotesPanel();
+    refreshWordsPanel();
+  }
+
   function pushState() {
     Object.keys(state.picks).forEach(function (key) {
       var parts = key.split(':'), c = rgb(state.picks[key]);
@@ -1714,6 +1895,7 @@ window.COURIER_PRIME_TTF = {
     if (instance) { instance.resize(size); instance.setTheme(bg, fg); return; }
     try {
       instance = FeelingsWheel(wrap, {
+        wheel: FeelingsWheel.WHEELS[wheelId],
         size: size, bg: bg, fg: fg, id: 'wheel',
         onSelect: function () { window.wheelSelected.apply(null, arguments); }
       });
@@ -1790,31 +1972,44 @@ window.COURIER_PRIME_TTF = {
   };
   var RING = { 1: 'core', 2: 'middle', 3: 'outer', 4: 'added' };
 
-  // database ids: the built-in wheel is numbered 1-114 in wheel order (each core, then its middle
-  // feelings, each followed by its two outer ones); a word you added keeps its own id, a large number
+  // database ids: the wheel's own feelings are numbered from 1 in wheel order (each core, then its
+  // middle feelings, each followed by its outer ones), so the 6-core wheel runs 1-114 and the 7-core
+  // wheel 1-130; a word you added keeps its own id, a large number
+  var ADDED_ID_MIN = 100000;
+  var idCache = null;
+  function wheelIds() {
+    if (idCache && idCache.wheel === wheelId) return idCache;
+    var byKey = {}, byId = {}, n = 0;
+    function visit(key) { n++; byKey[key] = n; byId[n] = key; }
+    for (var c = 0; c < instance.counts()[1]; c++) {
+      visit('1:' + c);
+      instance.childrenOf(1, c).forEach(function (m) {
+        visit('2:' + m);
+        instance.childrenOf(2, m).forEach(function (o) { visit('3:' + o); });
+      });
+    }
+    idCache = { wheel: wheelId, byKey: byKey, byId: byId, total: n };
+    return idCache;
+  }
   function feelingId(key) {
-    var p = key.split(':'), level = +p[0], i = +p[1];
-    if (level === 4) return i;
-    if (level === 1) return i * 19 + 1;
-    if (level === 2) return Math.floor(i / 6) * 19 + 2 + (i % 6) * 3;
-    var k = Math.floor(i / 2);
-    return Math.floor(k / 6) * 19 + 2 + (k % 6) * 3 + 1 + (i % 2);
+    if (key.indexOf('4:') === 0) return +key.slice(2);
+    return wheelIds().byKey[key];
   }
   function keyOfId(id) {
-    if (id > 114) return '4:' + id;
-    var c = Math.floor((id - 1) / 19), r = (id - 1) % 19;
-    if (r === 0) return '1:' + c;
-    var j = Math.floor((r - 1) / 3), rr = (r - 1) % 3, k = c * 6 + j;
-    return rr === 0 ? '2:' + k : '3:' + (k * 2 + rr - 1);
+    if (id >= ADDED_ID_MIN) return '4:' + id;
+    return wheelIds().byId[id] || null;
   }
   function parentKeyOf(f) {
-    if (f.level === 2) return '1:' + Math.floor(f.idx / 6);
-    if (f.level === 3) return '2:' + Math.floor(f.idx / 2);
+    if (f.level === 2 || f.level === 3) return (f.level - 1) + ':' + instance.ancestorAt(f.level, f.idx, f.level - 1);
     if (f.level === 4) return '3:' + words[f.idx].parent;
     return null;
   }
+  function wheelTitle() {
+    var w = FeelingsWheel.WHEELS[wheelId];
+    return w.label + ' (' + w.sample + ')';
+  }
 
-  // every feeling in wheel order: each core, then its middle feelings, each followed by its two
+  // every feeling in wheel order: each core, then its middle feelings, each followed by its
   // outer ones, each followed by any words added beyond it
   function allFeelings() {
     var list = [];
@@ -1833,18 +2028,17 @@ window.COURIER_PRIME_TTF = {
         addedAt: level === 4 && words[idx] ? words[idx].addedAt || null : null
       });
     }
-    for (var c = 0; c < 6; c++) {
+    for (var c = 0; c < instance.counts()[1]; c++) {
       var core = instance.nameOf(1, c);
       add(1, c, null, core);
-      for (var j = 0; j < 6; j++) {
-        var k = c * 6 + j, mid = instance.nameOf(2, k);
+      instance.childrenOf(1, c).forEach(function (k) {
+        var mid = instance.nameOf(2, k);
         add(2, k, core, core);
-        for (var m = 0; m < 2; m++) {
-          var o = k * 2 + m;
+        instance.childrenOf(2, k).forEach(function (o) {
           add(3, o, mid, core);
           wordsBeyond(o).forEach(function (w) { add(4, w.id, instance.nameOf(3, o), core); });
-        }
-      }
+        });
+      });
     }
     return list;
   }
@@ -1856,7 +2050,7 @@ window.COURIER_PRIME_TTF = {
   }
 
   function exportText(list) {
-    var out = ['FEELINGS WHEEL', 'Exported ' + today(), ''];
+    var out = ['FEELINGS WHEEL', 'Wheel: ' + wheelTitle(), 'Exported ' + today(), ''];
     var colored = list.filter(function (f) { return f.pickedColor; });
     var noted = list.filter(function (f) { return f.note; });
     out.push('COLORS YOU CHOSE (' + colored.length + ')');
@@ -1883,7 +2077,7 @@ window.COURIER_PRIME_TTF = {
     doc.setFont(F, 'bold'); doc.setFontSize(22); doc.setTextColor(P.INK[0], P.INK[1], P.INK[2]);
     doc.text('FEELINGS WHEEL', P.pageW / 2, 84, { align: 'center' });
     doc.setFont(F, 'normal'); doc.setFontSize(10); doc.setTextColor(110, 106, 100);
-    doc.text(today() + '   ·   ' + noted.length + (noted.length === 1 ? ' note' : ' notes') + '   ·   ' +
+    doc.text(FeelingsWheel.WHEELS[wheelId].label + '   ·   ' + today() + '   ·   ' + noted.length + (noted.length === 1 ? ' note' : ' notes') + '   ·   ' +
              colored.length + (colored.length === 1 ? ' color chosen' : ' colors chosen'), P.pageW / 2, 104, { align: 'center' });
     var job = renderExport(1400, 'FFFFFF', '23211F');
     try {
@@ -1978,7 +2172,8 @@ window.COURIER_PRIME_TTF = {
       });
       insF.free(); insN.free();
       var insM = db.prepare('INSERT INTO meta VALUES (?,?)');
-      [['exported_at', new Date().toISOString()], ['columns_per_line', String(noteBox.cols)],
+      [['exported_at', new Date().toISOString()], ['wheel', wheelId], ['wheel_name', wheelTitle()],
+       ['columns_per_line', String(noteBox.cols)],
        ['tab_size', String(noteBox.tabSize)],
        ['color_rule', 'A chosen color pulls the feeling one ring in 55%, two rings in 35% and three rings in 20% toward it; pulls combine as 1-(1-p1)(1-p2)...']
       ].forEach(function (r) { insM.run(r); });
@@ -1989,12 +2184,12 @@ window.COURIER_PRIME_TTF = {
       var readme =
         'feelings-wheel.sqlite\n\n' +
         'Open it with any SQLite tool, e.g.  sqlite3 feelings-wheel.sqlite\n\n' +
-        'feelings  one row per feeling on the wheel (6 core, 36 middle, 72 outer, plus words you added,\n' +
+        'feelings  one row per feeling on the wheel (core, middle and outer, plus words you added,\n' +
         '          ring = added, parent_id = the outer feeling they belong to)\n' +
         '          chosen_color is the color you picked (empty if none)\n' +
         '          shown_color is what the wheel showed, including colors spread up from below\n' +
         'notes     one row per note; typed_layout is the note with the sheet\'s line breaks\n' +
-        'meta      export time and settings\n\n' +
+        'meta      export time, which wheel (wheel = roberts for 7 core feelings, willcox for 6) and settings\n\n' +
         'Example:\n' +
         '  SELECT f.path, n.text FROM notes n JOIN feelings f ON f.id = n.feeling_id;\n';
       var zip = new window.JSZip();
