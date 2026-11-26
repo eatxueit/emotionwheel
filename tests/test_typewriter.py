@@ -132,3 +132,35 @@ def test_ruler_marks_line_up_with_the_columns(typewriter_page):
                                       return r.left + r.width / 2; }''')
     cw = page.evaluate("parseFloat(getComputedStyle(document.querySelector('.tw')).getPropertyValue('--tw-cw'))")
     assert abs((caret_x + cw / 2) - marker) < 2
+
+
+def test_typing_past_the_bottom_of_the_window_keeps_the_caret_in_view(context_factory, tmp_path):
+    from conftest import artifact_file
+    ctx = context_factory(height=600)
+    page = ctx.new_page()
+    page.goto(artifact_file(tmp_path, 'typewriter-note.html').as_uri())
+    page.wait_for_function('window.box && document.querySelector(".tw-line")')
+    page.evaluate('box.value = ""')
+    page.click('.tw-sheet')
+    for n in range(40):
+        page.keyboard.type('Line %d.' % n)
+        page.keyboard.press('Enter')
+    page.wait_for_timeout(300)
+    caret = page.evaluate("document.querySelector('.tw-caret').getBoundingClientRect().toJSON()")
+    assert 0 <= caret['top'] and caret['bottom'] <= 600, caret
+
+
+def test_typing_does_not_scroll_while_the_caret_is_visible(context_factory, tmp_path):
+    from conftest import artifact_file
+    ctx = context_factory(height=900)
+    page = ctx.new_page()
+    page.goto(artifact_file(tmp_path, 'typewriter-note.html').as_uri())
+    page.wait_for_function('window.box && document.querySelector(".tw-line")')
+    page.evaluate('window.scrollTo(0, 60)')
+    before = page.evaluate('window.scrollY')
+    page.click('.tw-sheet')
+    page.keyboard.type('A few words, then a new line.')
+    page.keyboard.press('Enter')
+    page.keyboard.type('And a few more.')
+    page.wait_for_timeout(200)
+    assert page.evaluate('window.scrollY') == before

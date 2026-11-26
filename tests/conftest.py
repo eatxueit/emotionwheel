@@ -195,8 +195,14 @@ class Wheel:
     def click(self, name):
         """Click a feeling on the wheel by its word. The wheel says where each segment is."""
         level, i = self.find(name)
-        box = self.page.locator('#wheel').bounding_box()
         c = self.page.evaluate('([l, i]) => window.feelingsWheel.centerOf(l, i)', [level, i])
+        # bring that spot on the wheel into the middle of the window first, as a person would scroll to it
+        self.page.evaluate('''([x, y]) => {
+            var el = document.getElementById('wheel'), r = el.getBoundingClientRect();
+            var s = r.height / parseFloat(el.style.width);
+            if (r.top + y * s < 40 || r.top + y * s > window.innerHeight - 40) window.scrollBy(0, r.top + y * s - window.innerHeight / 2);
+        }''', [c['x'], c['y']])
+        box = self.page.locator('#wheel').bounding_box()
         css = self.page.evaluate("parseFloat(document.getElementById('wheel').style.width)")
         scale = box['width'] / css
         x, y = box['x'] + c['x'] * scale, box['y'] + c['y'] * scale

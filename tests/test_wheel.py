@@ -365,3 +365,19 @@ def test_saved_words_come_back_when_the_page_opens(context_factory, tmp_path):
     assert w.sketch('pathOf(4, 1700000000000)') == 'Joyful › Sensuous › Stimulated'
     w.mode('color'); w.click('Lustful')
     assert page.inner_text('#sel-name') == 'Lustful'
+
+
+def test_typing_past_the_bottom_of_the_window_keeps_the_caret_in_view(context_factory, tmp_path):
+    from conftest import Wheel, artifact_file
+    ctx = context_factory(claude=True, wheel='willcox', height=700)
+    page = ctx.new_page()
+    page.goto(artifact_file(tmp_path, 'feelings-wheel.html').as_uri())
+    w = Wheel(page); w.wait_ready()
+    w.mode('notes'); w.click('Enraged')
+    for n in range(40):
+        page.keyboard.type('Line %d of a long note.' % n)
+        page.keyboard.press('Enter')
+    page.wait_for_timeout(300)
+    caret = page.evaluate("document.querySelector('#note-box .tw-caret').getBoundingClientRect().toJSON()")
+    assert 0 <= caret['top'] and caret['bottom'] <= 700, caret      # the line being typed is on screen
+    assert page.evaluate('window.scrollY') > 0                       # the page followed it down
