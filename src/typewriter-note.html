@@ -78,6 +78,7 @@
   .tw-line { height: 1.6em; display: block; }
   .tw-line span { display: inline-block; width: var(--tw-cw, 1ch); text-align: center; }
   .tw-caret {
+    scroll-margin: 4em 0;       /* room above and below the caret when the page scrolls to it */
     position: absolute; width: var(--tw-cw, 1ch); height: 0.14em; background: var(--ink);
     animation: tw-blink 1.05s steps(1) infinite;
   }
@@ -362,12 +363,26 @@
     if (col >= this.cols) { row += 1; col = 0; }   // carriage has returned
     this.caret.style.left = 'calc(var(--tw-pad-x) + ' + col + ' * var(--tw-cw))';
     this.caret.style.top = 'calc(var(--tw-pad-y) + ' + (row + 1) + ' * 1.6em - 0.3em)';
+    // the hidden field that takes the typing sits where the caret is: browsers keep the field you
+    // type into on screen, and with it at the top of the sheet a long note jumped back up there
+    this.input.style.left = this.caret.style.left;
+    this.input.style.top = 'calc(var(--tw-pad-y) + ' + row + ' * 1.6em)';
+    this._keepCaretInView();
     this.carriageEl.style.left = 'calc(' + (col + 0.5) + ' * var(--tw-cw))';
     this.carriageEl.classList.toggle('bell', col >= this.cols - 5);
     this.posEl.textContent = 'Line ' + (row + 1) + ' · Column ' + (col + 1) + ' of ' + this.cols;
     var left = this.maxLength - this.text.length;
     if (left <= 100) this._say(left === 0 ? 'End of the page.' : left + ' characters left on this page.', true);
     this._row = row; this._col = col;
+  };
+
+  // while typing, scroll just enough to keep the line being typed on screen
+  TypewriterBox.prototype._keepCaretInView = function () {
+    if (document.activeElement !== this.input) return;
+    var r = this.caret.getBoundingClientRect(), h = window.innerHeight || document.documentElement.clientHeight;
+    if (r.bottom > h - 8 || r.top < 8) {
+      try { this.caret.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { this.caret.scrollIntoView(false); }
+    }
   };
 
   function escapeHtml(c) {
